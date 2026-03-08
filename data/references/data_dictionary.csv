@@ -1,0 +1,15 @@
+column_name,unit,description,source,granularity,notes
+da_price_eur_mwh,€/MWh,Day-ahead electricity spot price for DE-LU bidding zone,ENTSO-E Transparency Platform,Hourly,Negative prices possible during high-RES periods
+affr_price_eur_mw,€/MW/h,aFRR (SRL) positive capacity awarded price — averaged across all 4 German TSOs,regelleistung.net,4-hour product → resampled to hourly,Capacity price (not activation price); forward-filled within 4h block
+ccgt_generation_mw,MW,Actual Fossil Gas (CCGT/OCGT) generation in DE-LU zone,ENTSO-E Transparency Platform (psr_type=B04),Hourly,Includes all gas-fired generation (CCGT + OCGT combined in B04)
+eu_ets_price_eur_tco2,€/tCO₂,EU Emissions Trading System (EUA) spot price,Ember Climate / ICE EEX,Daily → forward-filled to hourly,EUA = European Union Allowance; 1 EUA = right to emit 1 tonne CO₂
+gas_price_eur_mwh_th,€/MWh_th,THE (Trading Hub Europe) or TTF day-ahead gas price,energy-charts.info / ICE,Daily → forward-filled to hourly,Thermal MWh; convert from p/therm or $/MMBtu if needed
+css,€/MWh_e,Clean Spark Spread — gross margin from generating 1 MWh electricity,Calculated,Hourly,css = da_price - (gas_price / efficiency) - (ets_price * 0.202 / efficiency); efficiency=0.50
+hour_of_day,hour,Hour of day (0–23 UTC),Derived from timestamp,Hourly,Used for regime context and time-of-day analysis
+day_of_week,integer,Day of week (0=Monday to 6=Sunday),Derived from timestamp,Hourly,0–4 = weekday; 5–6 = weekend
+month,integer,Calendar month (1–12),Derived from timestamp,Hourly,Seasonality feature
+year,integer,Calendar year (2020–2023),Derived from timestamp,Hourly,For annual trend analysis
+is_weekend,0/1,Binary flag: 1 = Saturday or Sunday,Derived from day_of_week,Hourly,Weekends typically have lower industrial demand
+css_lag_24h,€/MWh_e,CSS value from 24 hours prior,Derived from css column,Hourly,Captures daily autocorrelation in opportunity costs
+css_rolling_24h_mean,€/MWh_e,24-hour rolling mean of CSS,Derived from css column,Hourly,Smoothed CSS signal; reduces hourly noise
+regime,categorical,Market regime classification: high / medium / low,Derived from ccgt_generation_mw percentiles,Hourly,"High: >75th %ile CCGT gen; Medium: 25–75th; Low: <25th"

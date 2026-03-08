@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>aFRR Opportunity Cost — Market Regime Report</title>
+  
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 1200px; margin: 40px auto;
+             padding: 0 20px; background: #f8f9fa; color: #333; }
+      h1 { color: #1a237e; border-bottom: 3px solid #1a237e; padding-bottom: 10px; }
+      h2 { color: #283593; margin-top: 40px; border-left: 4px solid #283593;
+           padding-left: 12px; }
+      h3 { color: #37474f; }
+      .summary-box { background: #e8eaf6; border-left: 5px solid #3949ab;
+                     padding: 16px 20px; border-radius: 4px; margin: 16px 0; }
+      .warning { background: #fff3e0; border-left: 5px solid #ef6c00;
+                 padding: 12px 16px; border-radius: 4px; margin: 8px 0; font-size: 14px; }
+      table { border-collapse: collapse; width: 100%; margin: 16px 0;
+              background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+      th { background: #37474f; color: white; padding: 10px 14px;
+           text-align: left; font-weight: 600; }
+      td { padding: 8px 14px; border-bottom: 1px solid #e0e0e0; font-size: 14px; }
+      tr:hover { background: #f5f5f5; }
+      .sig   { background-color: #e8f5e9; }
+      .nosig { background-color: #ffebee; }
+      .warn-vif { background-color: #fff3e0; }
+      .regime-high   { color: #1565C0; font-weight: 600; }
+      .regime-medium { color: #E65100; font-weight: 600; }
+      .regime-low    { color: #B71C1C; font-weight: 600; }
+      .metric-good { color: #2e7d32; font-weight: 600; }
+      .metric-warn { color: #e65100; font-weight: 600; }
+      footer { margin-top: 60px; font-size: 12px; color: #9e9e9e;
+               border-top: 1px solid #ddd; padding-top: 16px; }
+    </style>
+    
+</head>
+<body>
+  <h1>aFRR-up Opportunity Cost: Market Regime Analysis Report</h1>
+  <p style='color:#666;font-size:14px;'>
+    Gas peaker plant (CCGT) aFRR spin-up participation analysis — DE-LU bidding zone, 2021
+  </p>
+
+  
+    <h2>1. Executive Summary</h2>
+    <div class='summary-box'>
+      <p>Three OLS models were fitted, one per market regime, on 2021 DE-LU PTU data.
+         The Clean Spark Spread (CSS), day-ahead price, and CCGT generation are used as
+         predictors for aFRR-up capacity prices. Key results:</p>
+      <ul><li><span class='regime-high'>High regime</span>: R²=<span class='metric-warn'>0.256</span>, Adj R²=0.255, DW=<span class='metric-warn'>0.54</span>, N=2,004</li><li><span class='regime-medium'>Medium regime</span>: R²=<span class='metric-warn'>0.134</span>, Adj R²=0.134, DW=<span class='metric-warn'>0.05</span>, N=4,008</li><li><span class='regime-low'>Low regime</span>: R²=<span class='metric-warn'>0.165</span>, Adj R²=0.163, DW=<span class='metric-warn'>0.20</span>, N=2,004</li></ul>
+    </div>
+    <div class='warning'>⚠ <b>High regime</b>: R²=0.256 is below the 0.50 target. The 2021-only training window limits variance explained; a longer dataset should improve fit.</div><div class='warning'>⚠ <b>High regime</b>: DW=0.54 suggests positive autocorrelation. Model captures broad trend; intra-day PTU noise is not modelled.</div><div class='warning'>⚠ <b>Medium regime</b>: R²=0.134 is below the 0.50 target. The 2021-only training window limits variance explained; a longer dataset should improve fit.</div><div class='warning'>⚠ <b>Medium regime</b>: DW=0.05 suggests positive autocorrelation. Model captures broad trend; intra-day PTU noise is not modelled.</div><div class='warning'>⚠ <b>Low regime</b>: R²=0.165 is below the 0.50 target. The 2021-only training window limits variance explained; a longer dataset should improve fit.</div><div class='warning'>⚠ <b>Low regime</b>: DW=0.20 suggests positive autocorrelation. Model captures broad trend; intra-day PTU noise is not modelled.</div>
+    
+  
+    <h2>2. Regime Distribution</h2>
+    <table>
+      <tr>
+        <th>Regime</th><th>Total PTUs</th><th>Train</th><th>Test</th>
+        <th>CCGT Mean (MW)</th><th>CCGT Std (MW)</th>
+      </tr>
+      <tr><td class='regime-high'>High</td><td>2,004</td><td>0</td><td>0</td><td>11220</td><td>1594</td></tr><tr><td class='regime-medium'>Medium</td><td>4,008</td><td>0</td><td>0</td><td>6293</td><td>1377</td></tr><tr><td class='regime-low'>Low</td><td>2,004</td><td>0</td><td>0</td><td>3292</td><td>479</td></tr>
+    </table>
+    
+  
+    <h2>3. Model Performance Metrics</h2>
+    <table>
+      <tr><th>Metric</th><th class='regime-high'>High</th><th class='regime-medium'>Medium</th><th class='regime-low'>Low</th></tr>
+      <tr><td><b>R²</b></td><td class='metric-warn'>0.2562</td><td class='metric-warn'>0.1344</td><td class='metric-warn'>0.1646</td></tr><tr><td><b>Adj R²</b></td><td class=''>0.2550</td><td class=''>0.1337</td><td class=''>0.1633</td></tr><tr><td><b>Durbin-Watson</b></td><td class='metric-warn'>0.541</td><td class='metric-warn'>0.047</td><td class='metric-warn'>0.198</td></tr><tr><td><b>F-statistic</b></td><td class=''>229.58</td><td class=''>207.19</td><td class=''>131.32</td></tr><tr><td><b>F p-value</b></td><td class='metric-good'><0.001</td><td class='metric-good'><0.001</td><td class='metric-good'><0.001</td></tr><tr><td><b>N obs</b></td><td class=''>2,004</td><td class=''>4,008</td><td class=''>2,004</td></tr>
+    </table>
+    
+
+  <h2>4. Model Coefficients</h2>
+  <p>Model specification:
+     <code>aFRR_Price = β₀ + β₁·CSS + β₂·DA_Price + β₃·CCGT_Gen + ε</code>
+     (fitted separately per regime)
+  </p>
+  
+    <h3>Regime: <span class='regime-high'>High</span></h3>
+    <table>
+      <tr>
+        <th>Predictor</th><th>Coefficient</th><th>95% CI</th>
+        <th>p-value</th><th>Significant (p&lt;0.05)</th>
+      </tr>
+      <tr class='sig'><td><code>const</code></td><td>38.314705</td><td>[25.475572, 51.153837]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>css</code></td><td>0.113219</td><td>[0.012310, 0.214127]</td><td>0.0279</td><td>✓</td></tr><tr class='sig'><td><code>da_price_eur_mwh</code></td><td>0.254826</td><td>[0.215228, 0.294424]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>ccgt_generation_mw</code></td><td>-0.002085</td><td>[-0.003141, -0.001030]</td><td><0.001</td><td>✓</td></tr>
+    </table>
+    <p style='font-size:12px;color:#777;'>
+      Green rows: p&lt;0.05. Red rows: p≥0.05 (not statistically significant at 5% level).
+    </p>
+    
+    <h3>Regime: <span class='regime-medium'>Medium</span></h3>
+    <table>
+      <tr>
+        <th>Predictor</th><th>Coefficient</th><th>95% CI</th>
+        <th>p-value</th><th>Significant (p&lt;0.05)</th>
+      </tr>
+      <tr class='sig'><td><code>const</code></td><td>-15.650730</td><td>[-27.796780, -3.504679]</td><td>0.0116</td><td>✓</td></tr><tr class='sig'><td><code>css</code></td><td>-0.557873</td><td>[-0.645421, -0.470326]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>da_price_eur_mwh</code></td><td>0.518870</td><td>[0.476311, 0.561429]</td><td><0.001</td><td>✓</td></tr><tr class='nosig'><td><code>ccgt_generation_mw</code></td><td>0.001444</td><td>[-0.000245, 0.003134]</td><td>0.0938</td><td>✗</td></tr>
+    </table>
+    <p style='font-size:12px;color:#777;'>
+      Green rows: p&lt;0.05. Red rows: p≥0.05 (not statistically significant at 5% level).
+    </p>
+    
+    <h3>Regime: <span class='regime-low'>Low</span></h3>
+    <table>
+      <tr>
+        <th>Predictor</th><th>Coefficient</th><th>95% CI</th>
+        <th>p-value</th><th>Significant (p&lt;0.05)</th>
+      </tr>
+      <tr class='sig'><td><code>const</code></td><td>-43.380857</td><td>[-56.040851, -30.720863]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>css</code></td><td>-0.405789</td><td>[-0.449813, -0.361765]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>da_price_eur_mwh</code></td><td>0.188550</td><td>[0.140742, 0.236358]</td><td><0.001</td><td>✓</td></tr><tr class='sig'><td><code>ccgt_generation_mw</code></td><td>0.015095</td><td>[0.011302, 0.018888]</td><td><0.001</td><td>✓</td></tr>
+    </table>
+    <p style='font-size:12px;color:#777;'>
+      Green rows: p&lt;0.05. Red rows: p≥0.05 (not statistically significant at 5% level).
+    </p>
+    
+
+  <h2>5. Variance Inflation Factors (Multicollinearity Check)</h2>
+  <p>VIF &gt; 5 flagged in orange. High VIF for <code>const</code> is expected and
+     does not indicate multicollinearity among predictors.</p>
+  
+    <h3>VIF — Regime: <span class='regime-high'>High</span></h3>
+    <table>
+      <tr><th>Variable</th><th>VIF</th><th>Status</th></tr>
+      <tr class='warn-vif'><td><code>const</code></td><td>69.74</td><td>⚠ High (expected for const)</td></tr><tr class=''><td><code>css</code></td><td>3.66</td><td>OK</td></tr><tr class=''><td><code>da_price_eur_mwh</code></td><td>3.33</td><td>OK</td></tr><tr class=''><td><code>ccgt_generation_mw</code></td><td>1.20</td><td>OK</td></tr>
+    </table>
+    
+    <h3>VIF — Regime: <span class='regime-medium'>Medium</span></h3>
+    <table>
+      <tr><th>Variable</th><th>VIF</th><th>Status</th></tr>
+      <tr class='warn-vif'><td><code>const</code></td><td>32.65</td><td>⚠ High (expected for const)</td></tr><tr class=''><td><code>css</code></td><td>1.27</td><td>OK</td></tr><tr class=''><td><code>da_price_eur_mwh</code></td><td>1.07</td><td>OK</td></tr><tr class=''><td><code>ccgt_generation_mw</code></td><td>1.20</td><td>OK</td></tr>
+    </table>
+    
+    <h3>VIF — Regime: <span class='regime-low'>Low</span></h3>
+    <table>
+      <tr><th>Variable</th><th>VIF</th><th>Status</th></tr>
+      <tr class='warn-vif'><td><code>const</code></td><td>54.02</td><td>⚠ High (expected for const)</td></tr><tr class=''><td><code>css</code></td><td>1.15</td><td>OK</td></tr><tr class=''><td><code>da_price_eur_mwh</code></td><td>1.25</td><td>OK</td></tr><tr class=''><td><code>ccgt_generation_mw</code></td><td>1.11</td><td>OK</td></tr>
+    </table>
+    
+
+  <footer>
+    Generated by <code>src/analysis/report_generator.py</code> &mdash;
+    aFRR Opportunity Cost Calculator &mdash; DE-LU 2021
+  </footer>
+</body>
+</html>

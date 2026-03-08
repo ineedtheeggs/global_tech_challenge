@@ -1,0 +1,52 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env
+.env.*
+
+# Raw data (large CSVs, not committed — see data/references/ for sources)
+data/raw/*.csv
+data/processed/*.csv
+
+# Trained models
+outputs/models/*.pkl
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+Zone.Identifier
+*.Zone.Identifier
+
+# Test / coverage artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
