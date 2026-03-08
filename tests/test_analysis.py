@@ -2,7 +2,7 @@
 Unit tests for the analysis module (Phase 3).
 
 Tests:
-    - visualization: all 5 plot functions produce PNG files
+    - visualization: 3 plot functions produce PNG files
     - report_generator: HTML report with expected content
     - dashboard: self-contained HTML dashboard with Plotly
 """
@@ -19,11 +19,9 @@ import pytest
 import statsmodels.api as sm
 
 from src.analysis.visualization import (
-    plot_coefficient_comparison,
     plot_css_vs_affr,
     plot_forecast_curves,
-    plot_model_diagnostics,
-    plot_regime_distribution,
+    plot_historical_afrr,
 )
 from src.analysis.report_generator import generate_report
 from src.analysis.dashboard import generate_dashboard
@@ -40,13 +38,7 @@ def synthetic_df() -> pd.DataFrame:
     n = 50
     idx = pd.date_range("2021-01-01", periods=n, freq="h", tz="UTC")
 
-    # regime split: ~12 high, ~25 medium, ~13 low
-    regimes = (
-        ["high"] * 12
-        + ["medium"] * 25
-        + ["low"] * 13
-    )
-    # shuffle to make time series more realistic
+    regimes = ["high"] * 12 + ["medium"] * 25 + ["low"] * 13
     rng.shuffle(regimes)
 
     df = pd.DataFrame(index=idx)
@@ -57,21 +49,18 @@ def synthetic_df() -> pd.DataFrame:
     df["eu_ets_price_eur_t"] = rng.uniform(50, 80, n)
     df["ccgt_generation_mw"] = rng.uniform(1000, 10000, n)
     df["affr_price_eur_mw"] = (
-        100
-        + 0.3 * df["css"]
-        + 0.5 * df["da_price_eur_mwh"]
-        + rng.normal(0, 20, n)
-    )
+        5.0 + 0.3 * df["css"] + rng.normal(0, 5, n)
+    ).clip(lower=0)
     return df
 
 
 @pytest.fixture
 def fake_model_dir(tmp_path: Path, synthetic_df: pd.DataFrame) -> Path:
-    """Fit OLS on synthetic data, pickle models, write metadata. Returns models dir."""
+    """Fit CSS-only OLS models on synthetic data, pickle them, write metadata."""
     models_dir = tmp_path / "models"
     models_dir.mkdir(parents=True)
 
-    features = ["css", "da_price_eur_mwh", "ccgt_generation_mw"]
+    features = ["css"]
     target = "affr_price_eur_mw"
     metadata = {}
 
@@ -90,12 +79,29 @@ def fake_model_dir(tmp_path: Path, synthetic_df: pd.DataFrame) -> Path:
             "n_test": max(1, len(sub) // 5),
             "ccgt_mean_mw": float(sub["ccgt_generation_mw"].mean()),
             "ccgt_std_mw": float(sub["ccgt_generation_mw"].std()),
+            "n_observations": len(sub),
         }
 
     meta_path = models_dir / "regime_metadata.json"
     meta_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     return models_dir
+
+
+# ---------------------------------------------------------------------------
+# TestPlotHistoricalAfrr
+# ---------------------------------------------------------------------------
+
+class TestPlotHistoricalAfrr:
+    def test_creates_png(self, synthetic_df: pd.DataFrame, tmp_path: Path) -> None:
+        plots_dir = tmp_path / "plots"
+        plot_historical_afrr(synthetic_df, outputs_plots=plots_dir)
+        assert (plots_dir / "historical_afrr_prices.png").exists()
+
+    def test_returns_path(self, synthetic_df: pd.DataFrame, tmp_path: Path) -> None:
+        result = plot_historical_afrr(synthetic_df, outputs_plots=tmp_path / "plots")
+        assert isinstance(result, Path)
+        assert result.suffix == ".png"
 
 
 # ---------------------------------------------------------------------------
@@ -115,70 +121,6 @@ class TestPlotCssVsAfrr:
 
 
 # ---------------------------------------------------------------------------
-# TestPlotRegimeDistribution
-# ---------------------------------------------------------------------------
-
-class TestPlotRegimeDistribution:
-    def test_creates_png(self, synthetic_df: pd.DataFrame, tmp_path: Path) -> None:
-        plots_dir = tmp_path / "plots"
-        plot_regime_distribution(synthetic_df, outputs_plots=plots_dir)
-        assert (plots_dir / "regime_distribution.png").exists()
-
-    def test_returns_path(self, synthetic_df: pd.DataFrame, tmp_path: Path) -> None:
-        result = plot_regime_distribution(synthetic_df, outputs_plots=tmp_path / "plots")
-        assert isinstance(result, Path)
-        assert result.suffix == ".png"
-
-
-# ---------------------------------------------------------------------------
-# TestPlotModelDiagnostics
-# ---------------------------------------------------------------------------
-
-class TestPlotModelDiagnostics:
-    def test_creates_png(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
-    ) -> None:
-        plots_dir = tmp_path / "plots"
-        plot_model_diagnostics(
-            synthetic_df, outputs_plots=plots_dir, outputs_models=fake_model_dir
-        )
-        assert (plots_dir / "model_diagnostics.png").exists()
-
-    def test_returns_path(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
-    ) -> None:
-        result = plot_model_diagnostics(
-            synthetic_df, outputs_plots=tmp_path / "plots", outputs_models=fake_model_dir
-        )
-        assert isinstance(result, Path)
-        assert result.suffix == ".png"
-
-
-# ---------------------------------------------------------------------------
-# TestPlotCoefficientComparison
-# ---------------------------------------------------------------------------
-
-class TestPlotCoefficientComparison:
-    def test_creates_png(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
-    ) -> None:
-        plots_dir = tmp_path / "plots"
-        plot_coefficient_comparison(
-            synthetic_df, outputs_plots=plots_dir, outputs_models=fake_model_dir
-        )
-        assert (plots_dir / "coefficient_comparison.png").exists()
-
-    def test_returns_path(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
-    ) -> None:
-        result = plot_coefficient_comparison(
-            synthetic_df, outputs_plots=tmp_path / "plots", outputs_models=fake_model_dir
-        )
-        assert isinstance(result, Path)
-        assert result.suffix == ".png"
-
-
-# ---------------------------------------------------------------------------
 # TestPlotForecastCurves
 # ---------------------------------------------------------------------------
 
@@ -186,36 +128,22 @@ class TestPlotForecastCurves:
     def test_creates_png(
         self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
-        """Monkeypatch _load_metadata to use fake_model_dir."""
         import src.models.predictions as pred_module
-        import src.analysis.visualization as viz_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
 
-        real_metadata_path = pred_module.METADATA_PATH
-        pred_module.METADATA_PATH = fake_model_dir / "regime_metadata.json"
-        try:
-            plots_dir = tmp_path / "plots"
-            plot_forecast_curves(
-                synthetic_df, outputs_plots=plots_dir, outputs_models=fake_model_dir
-            )
-            assert (plots_dir / "forecast_curves.png").exists()
-        finally:
-            pred_module.METADATA_PATH = real_metadata_path
+        plots_dir = tmp_path / "plots"
+        plot_forecast_curves(synthetic_df, outputs_plots=plots_dir)
+        assert (plots_dir / "forecast_curves.png").exists()
 
     def test_returns_path(
         self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
         import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
 
-        real_metadata_path = pred_module.METADATA_PATH
-        pred_module.METADATA_PATH = fake_model_dir / "regime_metadata.json"
-        try:
-            result = plot_forecast_curves(
-                synthetic_df, outputs_plots=tmp_path / "plots", outputs_models=fake_model_dir
-            )
-            assert isinstance(result, Path)
-            assert result.suffix == ".png"
-        finally:
-            pred_module.METADATA_PATH = real_metadata_path
+        result = plot_forecast_curves(synthetic_df, outputs_plots=tmp_path / "plots")
+        assert isinstance(result, Path)
+        assert result.suffix == ".png"
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +152,11 @@ class TestPlotForecastCurves:
 
 class TestGenerateReport:
     def test_creates_html(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
+        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
+        import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
+
         reports_dir = tmp_path / "reports"
         generate_report(
             synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
@@ -233,25 +164,42 @@ class TestGenerateReport:
         assert (reports_dir / "market_regime_report.html").exists()
 
     def test_html_contains_rsquared(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
+        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
-        reports_dir = tmp_path / "reports"
+        import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
+
         path = generate_report(
-            synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
+            synthetic_df, outputs_reports=tmp_path / "reports", outputs_models=fake_model_dir
         )
         content = path.read_text(encoding="utf-8")
-        assert "R²" in content or "rsquared" in content.lower()
+        assert "R²" in content
 
     def test_html_contains_all_regimes(
-        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path
+        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
-        reports_dir = tmp_path / "reports"
+        import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
+
         path = generate_report(
-            synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
+            synthetic_df, outputs_reports=tmp_path / "reports", outputs_models=fake_model_dir
         )
         content = path.read_text(encoding="utf-8")
         for regime in ["High", "Medium", "Low"]:
             assert regime in content
+
+    def test_html_contains_scenario_table(
+        self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
+    ) -> None:
+        import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
+
+        path = generate_report(
+            synthetic_df, outputs_reports=tmp_path / "reports", outputs_models=fake_model_dir
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "Opportunity Cost Scenarios" in content
+        assert "Gas =" in content
 
 
 # ---------------------------------------------------------------------------
@@ -263,52 +211,36 @@ class TestGenerateDashboard:
         self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
         import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
 
-        real_metadata_path = pred_module.METADATA_PATH
-        pred_module.METADATA_PATH = fake_model_dir / "regime_metadata.json"
-        try:
-            reports_dir = tmp_path / "reports"
-            generate_dashboard(
-                synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
-            )
-            assert (reports_dir / "dashboard.html").exists()
-        finally:
-            pred_module.METADATA_PATH = real_metadata_path
+        reports_dir = tmp_path / "reports"
+        generate_dashboard(
+            synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
+        )
+        assert (reports_dir / "dashboard.html").exists()
 
     def test_html_contains_plotly(
         self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
         import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
 
-        real_metadata_path = pred_module.METADATA_PATH
-        pred_module.METADATA_PATH = fake_model_dir / "regime_metadata.json"
-        try:
-            reports_dir = tmp_path / "reports"
-            path = generate_dashboard(
-                synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
-            )
-            content = path.read_text(encoding="utf-8")
-            assert "plotly" in content.lower()
-        finally:
-            pred_module.METADATA_PATH = real_metadata_path
+        path = generate_dashboard(
+            synthetic_df, outputs_reports=tmp_path / "reports", outputs_models=fake_model_dir
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "plotly" in content.lower()
 
     def test_html_is_self_contained(
         self, synthetic_df: pd.DataFrame, fake_model_dir: Path, tmp_path: Path, monkeypatch
     ) -> None:
         """Verify the dashboard links to Plotly CDN (one external script, no inline lib)."""
         import src.models.predictions as pred_module
+        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS", fake_model_dir)
 
-        real_metadata_path = pred_module.METADATA_PATH
-        pred_module.METADATA_PATH = fake_model_dir / "regime_metadata.json"
-        try:
-            reports_dir = tmp_path / "reports"
-            path = generate_dashboard(
-                synthetic_df, outputs_reports=reports_dir, outputs_models=fake_model_dir
-            )
-            content = path.read_text(encoding="utf-8")
-            # CDN script tag present
-            assert "cdn.plot.ly" in content or "plotly" in content.lower()
-            # No base64 blob (not a fully-inlined standalone file)
-            assert len(content) < 5_000_000, "Dashboard should not inline the full Plotly lib"
-        finally:
-            pred_module.METADATA_PATH = real_metadata_path
+        path = generate_dashboard(
+            synthetic_df, outputs_reports=tmp_path / "reports", outputs_models=fake_model_dir
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "cdn.plot.ly" in content or "plotly" in content.lower()
+        assert len(content) < 5_000_000

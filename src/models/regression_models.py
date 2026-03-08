@@ -2,10 +2,14 @@
 OLS regression models for aFRR opportunity cost estimation.
 
 Fits one model per market regime:
-    aFRR_Price = β₀ + β₁·CSS + β₂·DA_Price + β₃·CCGT_Gen + ε
+    aFRR_Price = β₀ + β₁·CSS + ε
 
-Models are persisted as pickle files; per-regime CCGT means are stored in
-a JSON sidecar used by the predictions module.
+CSS is the sole predictor because:
+- DA price is already embedded in CSS (no double-counting)
+- Market regimes already isolate CCGT generation effects
+
+Models are persisted as pickle files; per-regime statistics are stored in
+a JSON sidecar used by the report and dashboard modules.
 
 Usage:
     python src/models/regression_models.py
@@ -21,7 +25,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.stattools import durbin_watson
 
 # Allow running as a script from the project root
@@ -33,24 +36,9 @@ from src.utils.logging_setup import get_logger
 logger = get_logger(__name__)
 
 REGIMES = ["high", "medium", "low"]
-FEATURES = ["css", "da_price_eur_mwh", "ccgt_generation_mw"]
+FEATURES = ["css"]
 TARGET = "affr_price_eur_mw"
 METADATA_PATH = OUTPUTS_MODELS / "regime_metadata.json"
-
-
-def compute_vif(X: pd.DataFrame) -> dict[str, float]:
-    """Compute Variance Inflation Factor for each predictor.
-
-    Args:
-        X: Feature matrix (with constant column added).
-
-    Returns:
-        Dict mapping feature name to VIF value.
-    """
-    vif = {}
-    for i, col in enumerate(X.columns):
-        vif[col] = variance_inflation_factor(X.values, i)
-    return vif
 
 
 def fit_regime_model(
@@ -83,31 +71,19 @@ def fit_regime_model(
     X_const = sm.add_constant(X)
     model = sm.OLS(y, X_const).fit(method=OLS_FIT_METHOD)
 
-    # ── Diagnostics ──────────────────────────────────────────────────────────
     dw_stat = durbin_watson(model.resid)
-    vif_scores = compute_vif(X_const)
+    css_coef = model.params.get("css", float("nan"))
+    css_pval = model.pvalues.get("css", float("nan"))
 
     logger.info(
-        "Regime '%s' | R²=%.4f | Adj-R²=%.4f | DW=%.3f",
+        "Regime '%s' | R²=%.4f | Adj-R²=%.4f | DW=%.3f | β(CSS)=%+.4f (p=%.4f)",
         regime,
         model.rsquared,
         model.rsquared_adj,
         dw_stat,
+        css_coef,
+        css_pval,
     )
-
-    for feat, coef, pval in zip(
-        model.params.index, model.params.values, model.pvalues.values
-    ):
-        logger.info(
-            "  %-25s coef=%+8.4f  p=%.4f",
-            feat,
-            coef,
-            pval,
-        )
-
-    for feat, vif_val in vif_scores.items():
-        flag = "  *** HIGH VIF ***" if vif_val > 5 else ""
-        logger.info("  VIF %-25s %.2f%s", feat, vif_val, flag)
 
     return model
 

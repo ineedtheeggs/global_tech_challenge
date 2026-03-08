@@ -81,12 +81,12 @@ global-tech-challenge/
 │   │   ├── regime_medium_model.pkl
 │   │   └── regime_low_model.pkl
 │   ├── plots/                          # Generated visualizations
-│   │   ├── regime_distribution.png
-│   │   ├── css_vs_affr_prices.png
-│   │   └── model_diagnostics.png
+│   │   ├── historical_afrr_prices.png  # aFRR time series coloured by regime
+│   │   ├── css_vs_affr_prices.png      # CSS vs aFRR scatter (coloured by regime)
+│   │   └── forecast_curves.png         # Gas price x-axis, DA scenario lines, 3 regime panels
 │   ├── reports/
 │   │   ├── market_regime_report.html   # Automated HTML report
-│   │   └── model_summary.txt           # Text summary of results
+│   │   └── dashboard.html              # Interactive Plotly dashboard
 │   └── data/
 │       └── opportunity_cost_estimates.csv  # Final estimates
 │
@@ -165,7 +165,7 @@ python src/models/model_validation.py
 ```
 **Outputs:**
 - `outputs/models/*.pkl` - Trained models (3 regime models)
-- `outputs/plots/model_diagnostics.png` - Residual plots, Q-Q plots
+- `outputs/models/regime_metadata.json` - Coefficients, R², DW stats per regime
 - Model coefficients and R² values
 
 ### Phase 3: Analysis & Visualization
@@ -175,9 +175,11 @@ python src/analysis/dashboard.py
 python src/analysis/report_generator.py
 ```
 **Outputs:**
-- `outputs/plots/*.png` - Market condition visualizations
-- `outputs/reports/market_regime_report.html` - Interactive HTML report
-- `outputs/data/opportunity_cost_estimates.csv` - Final estimates
+- `outputs/plots/historical_afrr_prices.png` - aFRR time series coloured by regime
+- `outputs/plots/css_vs_affr_prices.png` - CSS vs aFRR scatter (coloured by regime)
+- `outputs/plots/forecast_curves.png` - Gas price x-axis, DA scenario lines, 3 regime panels
+- `outputs/reports/dashboard.html` - Interactive Plotly dashboard (3 charts: historical aFRR | CSS scatter | forecast curves)
+- `outputs/reports/market_regime_report.html` - HTML report (4 sections: findings → snapshot → reliability → scenario table)
 
 ### Testing & Validation
 ```bash
@@ -299,23 +301,28 @@ def calculate_css(
 
 ### Regression Model Template
 ```
-aFRR_Price = β₀ + β₁*CSS + β₂*DA_Price + β₃*CCGT_Gen + ε
+aFRR_Price = β₀ + β₁·CSS + ε
 ```
 
 **Fitted separately for each regime** to capture interaction effects.
 
-### Expected Coefficients
-| Regime | β₁ (CSS) | Direction | Interpretation |
-|--------|----------|-----------|-----------------|
-| High | Low (~0.05-0.10) | Weak | Abundant reserves suppress CSS effect |
-| Medium | Moderate (~0.15-0.25) | Medium | Mixed supply conditions |
-| Low | High (~0.35-0.50) | Strong | Scarce reserves amplify CSS effect |
+**Rationale for single-predictor design:**
+- DA price is already embedded in CSS — including it separately would double-count
+- Market regimes already isolate CCGT generation effects → CCGT_Gen dropped as predictor
+
+### Actual Coefficients (2021 data, Jan–Nov)
+| Regime | β₁ (CSS slope) | R²    | Note |
+|--------|----------------|-------|------|
+| High   | +0.5864        | 0.177 | Positive slope as expected |
+| Medium | −0.2769        | 0.011 | Negative slope — 2021 data artifact |
+| Low    | −0.3140        | 0.094 | Negative slope — 2021 data artifact |
+
+**Note on negative slopes:** Medium/low regimes show negative CSS sensitivity in 2021 data. This is a real finding from an 11-month training window with high PTU-level noise, not a bug. A longer multi-year window is expected to clarify the relationship.
 
 ### Validation Metrics
-- **R² > 0.50** for each regime model
+- **R² > 0.50** target for each regime model (actual values lower due to short data window)
 - **Residuals:** Normally distributed, homoscedastic
-- **Durbin-Watson:** 1.8-2.2 (check for autocorrelation)
-- **VIF < 5** for all predictors (multicollinearity check)
+- **Durbin-Watson:** 1.8–2.2 target (actual DW < 1 indicates positive autocorrelation — flagged in report)
 
 ---
 
@@ -369,21 +376,19 @@ See `data/references/data_sources.md` for detailed access instructions.
 
 ### 3. Opportunity Cost Calculator
 - **Type:** Function or CLI tool
-- **Inputs:** DA price forecast, Gas forward price, Carbon tax, Market regime
+- **Inputs:** `da_price`, `gas_price`, `eu_ets_price`, `regime`
 - **Output:** Estimated aFRR-up opportunity cost (€/MWh)
 - **Files:** `src/models/predictions.py` + CLI wrapper
+- **API:** `estimate_afrr_price(da_price, gas_price, eu_ets_price, regime)`
 
-### 4. Analysis Report
-- **Format:** HTML interactive dashboard + PDF summary
-- **Contents:** Model coefficients, regime distributions, forecast curves
-- **Files:** `outputs/reports/market_regime_report.html`
+### 4. Analysis Report & Dashboard
+- **Report:** `outputs/reports/market_regime_report.html` — 4 sections: key findings, model snapshot, reliability flags, scenario table
+- **Dashboard:** `outputs/reports/dashboard.html` — interactive Plotly, 3 charts (historical aFRR by regime, CSS scatter, forecast curves)
 
-### 5. Visualizations
-- CSS vs aFRR prices scatter plot (colored by regime)
-- Model diagnostic plots (residuals, Q-Q plot, scale-location)
-- Regime distribution over time
-- Coefficient comparison across regimes
-- Forecast curves (DA price scenarios)
+### 5. Visualizations (3 plots)
+- `historical_afrr_prices.png` — aFRR time series coloured by market regime
+- `css_vs_affr_prices.png` — CSS vs aFRR prices scatter plot (colored by regime)
+- `forecast_curves.png` — gas price on x-axis, DA scenario lines, separate panel per regime
 
 ---
 
@@ -459,9 +464,9 @@ REGIME_THRESHOLDS = {
     'low': 0.00        # Bottom 25%
 }
 
-# Time period for analysis
-ANALYSIS_START = '2020-01-01'  # Post EU-ETS carbon pricing
-ANALYSIS_END = '2023-12-31'    # Pre BESS boom (approx)
+# Time period for analysis (constrained by data availability)
+ANALYSIS_START = '2021-01-01'
+ANALYSIS_END = '2021-11-30'    # 11-month window; shorter than ideal
 
 # Model hyperparameters
 OLS_FIT_METHOD = 'pinv'        # Pseudo-inverse for robustness
@@ -471,6 +476,13 @@ RANDOM_STATE = 42
 # Data validation
 MAX_MISSING_RATE = 0.05        # Max 5% missing values per column
 OUTLIER_THRESHOLD = 3.0        # Z-score threshold
+
+# Forecast scenario constants (used by predictions.py and dashboard)
+FORECAST_ETS_PRICE = 65.0           # Fixed EU-ETS price for scenarios (€/ton)
+FORECAST_GAS_MIN = 20.0             # Gas price range start (€/MWh thermal)
+FORECAST_GAS_MAX = 100.0            # Gas price range end (€/MWh thermal)
+FORECAST_GAS_STEPS = 100            # Number of gas price points in curve
+FORECAST_DA_SCENARIOS = [50.0, 80.0, 120.0, 160.0]  # DA price lines (€/MWh)
 ```
 
 ---

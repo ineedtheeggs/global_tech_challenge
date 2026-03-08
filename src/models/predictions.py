@@ -4,13 +4,15 @@ aFRR opportunity cost calculator.
 Provides a Python function and a CLI tool for estimating the aFRR-up bid price
 given current market inputs and an assumed market regime.
 
+Model:  aFRR_Price = β₀ + β₁·CSS    (regime-specific coefficients)
+        CSS = DA_Price - Gas_Price/η - ETS·intensity/η
+
 Usage (CLI):
     python src/models/predictions.py \\
         --da-price 80 \\
         --gas-price 35 \\
         --ets-price 60 \\
-        --regime low \\
-        [--ccgt-gen 3000]
+        --regime low
 
 Usage (Python API):
     from src.models.predictions import estimate_afrr_price
@@ -105,28 +107,24 @@ def estimate_afrr_price(
     gas_price: float,
     eu_ets_price: float,
     regime: str,
-    ccgt_generation: float | None = None,
 ) -> float:
     """Estimate aFRR-up opportunity cost bid price.
 
-    Internally computes CSS from the provided market inputs, then applies
-    the regime-specific OLS model.  If ccgt_generation is not provided,
-    the regime mean from the training data is used as a fallback.
+    Computes CSS from the provided market inputs, then applies the
+    regime-specific OLS model:  aFRR_Price = β₀ + β₁·CSS
 
     Args:
         da_price: Day-ahead electricity price (€/MWh).
         gas_price: Gas forward price (€/MWh thermal).
         eu_ets_price: EU-ETS carbon allowance price (€/tCO₂).
         regime: Market regime — one of 'high', 'medium', 'low'.
-        ccgt_generation: Current CCGT generation (MW).  Optional; defaults
-            to the regime mean observed during model training.
 
     Returns:
         Estimated aFRR-up price in €/MW.
 
     Raises:
         ValueError: If regime is invalid or any price is negative.
-        FileNotFoundError: If model or metadata files are missing.
+        FileNotFoundError: If model files are missing.
     """
     if any(v < 0 for v in [da_price, gas_price, eu_ets_price]):
         raise ValueError("Prices cannot be negative.")
@@ -134,24 +132,10 @@ def estimate_afrr_price(
         raise ValueError(f"regime must be one of {VALID_REGIMES}, got '{regime}'")
 
     model = _load_model(regime)
-    metadata = _load_metadata()
-
-    if ccgt_generation is None:
-        ccgt_generation = metadata[regime]["ccgt_mean_mw"]
-        logger.debug(
-            "ccgt_generation not provided — using regime '%s' mean: %.1f MW",
-            regime,
-            ccgt_generation,
-        )
-
     css = _compute_css(da_price, gas_price, eu_ets_price)
     logger.debug("Computed CSS: %.4f €/MWh", css)
 
-    feature_vector = pd.DataFrame(
-        [[1.0, css, da_price, ccgt_generation]],
-        columns=["const", "css", "da_price_eur_mwh", "ccgt_generation_mw"],
-    )
-
+    feature_vector = pd.DataFrame([[1.0, css]], columns=["const", "css"])
     prediction = float(model.predict(feature_vector)[0])
     return prediction
 
@@ -189,13 +173,6 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         choices=list(VALID_REGIMES),
         help="Market regime.",
     )
-    parser.add_argument(
-        "--ccgt-gen",
-        type=float,
-        default=None,
-        metavar="MW",
-        help="Current CCGT generation (MW). Defaults to regime mean if omitted.",
-    )
     return parser
 
 
@@ -209,7 +186,6 @@ def main() -> None:
         gas_price=args.gas_price,
         eu_ets_price=args.ets_price,
         regime=args.regime,
-        ccgt_generation=args.ccgt_gen,
     )
 
     css = _compute_css(args.da_price, args.gas_price, args.ets_price)
@@ -221,11 +197,6 @@ def main() -> None:
     print(f"  ETS price:       {args.ets_price:>8.2f} €/tCO₂")
     print(f"  CSS (computed):  {css:>8.2f} €/MWh")
     print(f"  Regime:          {args.regime}")
-    if args.ccgt_gen is not None:
-        print(f"  CCGT gen:        {args.ccgt_gen:>8.0f} MW")
-    else:
-        metadata = _load_metadata()
-        print(f"  CCGT gen:        {metadata[args.regime]['ccgt_mean_mw']:>8.0f} MW (regime mean)")
     print(f"{'='*50}")
     print(f"  Estimated aFRR price: {price:>8.2f} €/MW")
     print(f"{'='*50}\n")

@@ -75,10 +75,20 @@ FORCE_REDOWNLOAD = False    # If True, re-fetch even if raw CSVs exist
 # ---------------------------------------------------------------------------
 # Phase 3 forecast scenario defaults
 # ---------------------------------------------------------------------------
+FORECAST_ETS_PRICE: float = 65.0      # €/tCO₂  (Mar 2026 EUA) — fixed in scenario charts
+
+# Gas price sweep (primary axis in forecast chart)
+FORECAST_GAS_MIN: float = 20.0        # €/MWh thermal
+FORECAST_GAS_MAX: float = 100.0       # €/MWh thermal
+FORECAST_GAS_STEPS: int = 100
+
+# DA price scenarios (lines in forecast chart)
+FORECAST_DA_SCENARIOS: list[float] = [50.0, 80.0, 120.0, 160.0]  # €/MWh
+
+# Legacy / kept for backward compat
 FORECAST_GAS_PRICE: float = 45.0      # €/MWh thermal (Mar 2026 TTF)
-FORECAST_ETS_PRICE: float = 65.0      # €/tCO₂  (Mar 2026 EUA)
-FORECAST_DA_MIN: float = 50.0         # €/MWh — set to week_min - 10
-FORECAST_DA_MAX: float = 200.0        # €/MWh — set to week_max + 10
+FORECAST_DA_MIN: float = 50.0
+FORECAST_DA_MAX: float = 200.0
 FORECAST_DA_STEPS: int = 100
 
 # ---------------------------------------------------------------------------
