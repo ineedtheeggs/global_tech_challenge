@@ -102,19 +102,21 @@ def plot_css_vs_affr(
     df: pd.DataFrame,
     outputs_plots: Path = OUTPUTS_PLOTS,
     outputs_models: Path = OUTPUTS_MODELS,
-) -> Path:
-    """Scatter plot of CSS vs aFRR prices, one subplot per year, coloured by regime.
+) -> list[Path]:
+    """Scatter plots of CSS vs aFRR prices — one PNG per regime, subplotted by year.
+
+    Produces 3 files (one per regime), each containing one subplot per year.
+    Files are named ``css_vs_affr_{regime}.png`` (e.g. ``css_vs_affr_high.png``).
 
     Args:
         df: DataFrame with 'css', 'affr_price_eur_mw', 'regime' columns and DatetimeIndex.
-        outputs_plots: Directory to save PNG into.
+        outputs_plots: Directory to save PNGs into.
         outputs_models: Not used; included for consistent API.
 
     Returns:
-        Path to saved PNG file.
+        List of 3 Paths to saved PNG files, ordered high → medium → low.
     """
     outputs_plots.mkdir(parents=True, exist_ok=True)
-    out_path = outputs_plots / "css_vs_affr_prices.png"
 
     years = sorted(df.index.year.unique())
     n_years = len(years)
@@ -123,23 +125,26 @@ def plot_css_vs_affr(
 
     y_col = "affr_price_eur_mw"
     y_clip = df[y_col].quantile(0.99)
+    paths: list[Path] = []
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    for regime in REGIME_ORDER:
+        regime_df = df[df["regime"] == regime]
+        out_path = outputs_plots / f"css_vs_affr_{regime}.png"
 
-    for i, year in enumerate(years):
-        row_idx, col_idx = divmod(i, ncols)
-        ax = axes[row_idx][col_idx]
-        year_df = df[df.index.year == year]
+        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
 
-        for regime in REGIME_ORDER:
-            sub = year_df[year_df["regime"] == regime]
+        for i, year in enumerate(years):
+            row_idx, col_idx = divmod(i, ncols)
+            ax = axes[row_idx][col_idx]
+            sub = regime_df[regime_df.index.year == year]
+
             ax.scatter(
                 sub["css"],
                 sub[y_col].clip(upper=y_clip),
                 color=REGIME_COLORS[regime],
-                alpha=0.4,
+                alpha=0.5,
                 s=8,
-                label=f"{regime.capitalize()} (n={len(sub):,})",
+                label=f"n={len(sub):,}",
                 rasterized=True,
             )
             if len(sub) > 1:
@@ -150,25 +155,30 @@ def plot_css_vs_affr(
                     np.polyval(coeffs, x_range),
                     color=REGIME_COLORS[regime],
                     linewidth=1.5,
+                    linestyle="--",
                 )
 
-        ax.set_title(f"Year {year} (n={len(year_df):,})", fontsize=10)
-        ax.set_xlabel("CSS (€/MWh)", fontsize=9)
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=7)
+            ax.set_title(f"{year} (n={len(sub):,})", fontsize=10)
+            ax.set_xlabel("CSS (€/MWh)", fontsize=9)
+            ax.grid(True, alpha=0.3)
 
-    # Hide unused subplot cells
-    for j in range(n_years, nrows * ncols):
-        row_idx, col_idx = divmod(j, ncols)
-        axes[row_idx][col_idx].set_visible(False)
+        # Hide unused subplot cells
+        for j in range(n_years, nrows * ncols):
+            row_idx, col_idx = divmod(j, ncols)
+            axes[row_idx][col_idx].set_visible(False)
 
-    axes[0][0].set_ylabel("aFRR-up Price (€/MW)", fontsize=9)
-    fig.suptitle("CSS vs aFRR-up Prices by Year and Market Regime", fontsize=13)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
-    plt.close(fig)
-    logger.info("Saved: %s", out_path)
-    return out_path
+        axes[0][0].set_ylabel("aFRR-up Price (€/MW)", fontsize=9)
+        fig.suptitle(
+            f"CSS vs aFRR-up Prices — {regime.capitalize()} Regime by Year",
+            fontsize=13,
+        )
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
+        logger.info("Saved: %s", out_path)
+        paths.append(out_path)
+
+    return paths
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +451,8 @@ if __name__ == "__main__":
     OUTPUTS_PLOTS.mkdir(parents=True, exist_ok=True)
 
     plot_historical_afrr(df_main)
-    plot_css_vs_affr(df_main)
+    css_paths = plot_css_vs_affr(df_main)
+    logger.info("CSS vs aFRR: %d plots saved.", len(css_paths))
     weekly_paths = plot_2026_forecast(df_main)
     logger.info("February 2026 weekly forecast plots: %s", weekly_paths)
     plot_regime_distribution(df_main)

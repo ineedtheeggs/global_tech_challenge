@@ -52,7 +52,6 @@ global-tech-challenge/
 │   ├── analysis/
 │   │   ├── __init__.py
 │   │   ├── visualization.py            # Plots for regime conditions
-│   │   ├── dashboard.py                # Interactive dashboard
 │   │   └── report_generator.py         # Automated report generation
 │   │
 │   └── utils/
@@ -64,7 +63,7 @@ global-tech-challenge/
 │   ├── __init__.py
 │   ├── test_data_pipeline.py           # Test data loading/cleaning (37 tests)
 │   ├── test_models.py                  # Test regime classifier, regression models, predictions (39 tests)
-│   └── test_analysis.py                # Test analysis functions, dashboard, report (16 tests)
+│   └── test_analysis.py                # Test analysis functions and report (13 tests)
 │
 ├── outputs/
 │   ├── models/                         # Saved model files (pickle)
@@ -86,8 +85,7 @@ global-tech-challenge/
 │   │   ├── forecast_curves_feb_w3.png
 │   │   └── forecast_curves_feb_w4.png
 │   ├── reports/
-│   │   ├── market_regime_report.html   # Automated HTML report
-│   │   └── dashboard.html              # Interactive Plotly dashboard
+│   │   └── market_regime_report.html   # Narrative HTML report
 │   └── data/
 │
 └── venv/                               # Virtual environment (not committed)
@@ -174,7 +172,6 @@ python src/models/regression_models.py
 ### Phase 3: Analysis & Visualization ✅
 ```bash
 python src/analysis/visualization.py
-python src/analysis/dashboard.py
 python src/analysis/report_generator.py
 ```
 **Outputs:**
@@ -182,8 +179,7 @@ python src/analysis/report_generator.py
 - `outputs/plots/css_vs_affr_prices.png` — CSS vs aFRR scatter (coloured by regime)
 - `outputs/plots/regime_distribution.png` — stacked bar of regime share per year
 - `outputs/plots/forecast_curves_{month}_w{N}.png` — weekly forecast plots (Jan W1–W5, Feb W1–W4)
-- `outputs/reports/dashboard.html` — interactive Plotly dashboard (3 charts)
-- `outputs/reports/market_regime_report.html` — HTML report (4 sections: findings → snapshot → reliability → scenario table)
+- `outputs/reports/market_regime_report.html` — narrative HTML report (5 sections: definitions → model fitting → model insights → forecasts → forecast insights)
 
 ### Testing & Validation
 ```bash
@@ -299,9 +295,8 @@ See `data/references/data_sources.md` for detailed access instructions.
 - **API:** `estimate_afrr_price(da_price, gas_price, eu_ets_price, regime, year=2022)`
 - **CLI:** `python src/models/predictions.py --da-price 80 --gas-price 35 --ets-price 60 --regime low --year 2022`
 
-### 4. Analysis Report & Dashboard ✅
-- **Report:** `outputs/reports/market_regime_report.html` — 4 sections: key findings, model snapshot, reliability flags, scenario table
-- **Dashboard:** `outputs/reports/dashboard.html` — interactive Plotly, 3 charts (historical aFRR by regime, CSS scatter, forecast curves)
+### 4. Analysis Report ✅
+- **Report:** `outputs/reports/market_regime_report.html` — 5 sections: definitions → model fitting → model insights → forecasts → forecast insights
 
 ### 5. Visualizations (12 plots) ✅
 - `historical_afrr_prices.png` — aFRR time series coloured by market regime
@@ -314,11 +309,11 @@ See `data/references/data_sources.md` for detailed access instructions.
 
 ## Testing Strategy
 
-### Unit Tests (92 total, all passing)
+### Unit Tests (89 total, all passing)
 ```bash
 venv/bin/pytest tests/test_data_pipeline.py -v   # 37 tests: data loading/cleaning
 venv/bin/pytest tests/test_models.py -v           # 39 tests: regime classifier, regression, predictions
-venv/bin/pytest tests/test_analysis.py -v         # 16 tests: visualization, report, dashboard
+venv/bin/pytest tests/test_analysis.py -v         # 13 tests: visualization and report
 ```
 
 ### What is Tested
@@ -326,7 +321,7 @@ venv/bin/pytest tests/test_analysis.py -v         # 16 tests: visualization, rep
 - **Regime Classifier:** `load_centroids`, `compute_thresholds`, `assign_regimes` boundary logic, method toggle
 - **Regression Models:** `fit_regime_model`, `save_model`, `build_year_regime_metadata`, per-year `run()` integration
 - **Predictions:** `estimate_afrr_price` with explicit/default year, CLI `--year` arg, error handling
-- **Analysis:** PNG plots, HTML report content, Plotly dashboard
+- **Analysis:** PNG plots, HTML report content
 
 ### Coverage Target
 - Minimum **80% code coverage**
@@ -343,7 +338,6 @@ python src/data_pipeline/main.py
 python src/models/regime_classifier.py
 python src/models/regression_models.py
 python src/analysis/visualization.py
-python src/analysis/dashboard.py
 python src/analysis/report_generator.py
 
 # Predict opportunity cost (CLI)
@@ -387,7 +381,7 @@ MIN_OBSERVATIONS = 20     # Minimum rows per (year, regime) to fit a model
 MAX_MISSING_RATE   = 0.05   # Max 5% missing values per column
 OUTLIER_THRESHOLD  = 3.0    # Z-score threshold
 
-# Forecast scenario constants (used by predictions.py, dashboard, and weekly forecast plots)
+# Forecast scenario constants (used by predictions.py and weekly forecast plots)
 FORECAST_ETS_PRICE      = 65.0                      # Fixed EU-ETS (€/tCO₂)
 FORECAST_GAS_MIN        = 20.0                       # €/MWh thermal
 FORECAST_GAS_MAX        = 100.0                      # €/MWh thermal

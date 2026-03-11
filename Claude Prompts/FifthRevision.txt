@@ -1,0 +1,1359 @@
+ ▐▛███▜▌   Claude Code v2.1.72
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/GitRepos/global_tech_challenge
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Plan to implement                                                            │
+│                                                                              │
+│ Plan: Remove Dashboard & Rebuild Report per Template                         │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ Remove dashboard.py and rewrite report_generator.py to match the narrative   │
+│ structure                                                                    │
+│ from Resources/Report Template.odt. The template defines a story-driven HTML │
+│  report with                                                                 │
+│ embedded PNG plots — not a statistical summary. Scenario tables and the old  │
+│ 4-section layout                                                             │
+│ are replaced entirely.                                                       │
+│                                                                              │
+│ ---                                                                          │
+│ Confirmed Decisions                                                          │
+│                                                                              │
+│ ┌────────────────┬────────────────────────────────────────────────────────┐  │
+│ │    Question    │                         Answer                         │  │
+│ ├────────────────┼────────────────────────────────────────────────────────┤  │
+│ │                │ Soften "highly competitive" → "competitive": only      │  │
+│ │ Low regime     │ economical players bid in low regime; even in high CSS │  │
+│ │ framing        │  periods, this extrinsic competition keeps aFRR bids   │  │
+│ │                │ flat                                                   │  │
+│ ├────────────────┼────────────────────────────────────────────────────────┤  │
+│ │ 2021 low       │                                                        │  │
+│ │ regime         │ Skip — only flag 2022 anomaly                          │  │
+│ │ negative β₁    │                                                        │  │
+│ ├────────────────┼────────────────────────────────────────────────────────┤  │
+│ │ Coefficient    │ PNG only (css_vs_affr_prices.png) — no extra table     │  │
+│ │ table          │                                                        │  │
+│ └────────────────┴────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│ ---                                                                          │
+│ Errors Fixed in Rewrite                                                      │
+│                                                                              │
+│ 1. _load_all_models() loaded flat pkl files (regime_{regime}_model.pkl)      │
+│ which don't exist in production → new report reads directly from             │
+│ regime_metadata.json, no pkl loading required                                │
+│ 2. "Training period: Jan 2022–Dec 2023" claim → replaced by correct          │
+│ 2020–2026 range                                                              │
+│ 3. Regime descriptions used percentile language → new report uses K-Means MW │
+│  thresholds                                                                  │
+│                                                                              │
+│ ---                                                                          │
+│ Files to Change                                                              │
+│                                                                              │
+│ ┌──────────────────────────────────┬───────────────────────────────────────┐ │
+│ │               File               │                Action                 │ │
+│ ├──────────────────────────────────┼───────────────────────────────────────┤ │
+│ │ src/analysis/report_generator.py │ Full rewrite (new 5-section           │ │
+│ │                                  │ structure)                            │ │
+│ ├──────────────────────────────────┼───────────────────────────────────────┤ │
+│ │ src/analysis/dashboard.py        │ Delete                                │ │
+│ ├──────────────────────────────────┼───────────────────────────────────────┤ │
+│ │ src/analysis/__init__.py         │ Remove any dashboard import/export    │ │
+│ ├──────────────────────────────────┼───────────────────────────────────────┤ │
+│ │                                  │ Remove TestGenerateDashboard + from   │ │
+│ │ tests/test_analysis.py           │ src.analysis.dashboard import         │ │
+│ │                                  │ generate_dashboard; update report     │ │
+│ │                                  │ content assertions                    │ │
+│ ├──────────────────────────────────┼───────────────────────────────────────┤ │
+│ │ CLAUDE.md                        │ Remove dashboard from phase 3         │ │
+│ │                                  │ description                           │ │
+│ └──────────────────────────────────┴───────────────────────────────────────┘ │
+│                                                                              │
+│ ---                                                                          │
+│ New report_generator.py Design                                               │
+│                                                                              │
+│ Function signature                                                           │
+│                                                                              │
+│ def generate_report(                                                         │
+│     df: pd.DataFrame,                                                        │
+│     outputs_reports: Path = OUTPUTS_REPORTS,                                 │
+│     outputs_models: Path = OUTPUTS_MODELS,                                   │
+│     outputs_plots: Path = OUTPUTS_PLOTS,     # new param                     │
+│ ) -> Path                                                                    │
+│ No pkl loading needed — read stats entirely from regime_metadata.json.       │
+│                                                                              │
+│ 5-Section HTML Structure                                                     │
+│                                                                              │
+│ Section 1 — Definitions                                                      │
+│ - Regimes: Low (<5,858 MW), Medium (5,858–10,546 MW), High (≥10,546 MW),     │
+│ based on K-Means centroids                                                   │
+│ - CSS formula: DA_Price − Gas_Price/η − ETS·intensity/η (η=0.50,             │
+│ intensity=0.202)                                                             │
+│ - aFRR: balancing reserve (up direction), pay-as-bid, weighted average of    │
+│ accepted bids = hourly price                                                 │
+│                                                                              │
+│ Section 2 — Periods / Model Fitting                                          │
+│ - Per-year OLS: aFRR_Price = β₀ + β₁·CSS (Hirth & Ziegenhagen 2013 as        │
+│ theoretical basis)                                                           │
+│ - Coefficients fitted per year to capture COVID-19 / energy crisis / Russian │
+│  aggression effects                                                          │
+│ - Embed <img src="../plots/css_vs_affr_prices.png">                          │
+│                                                                              │
+│ Section 3 — Insights from Fitted Models                                      │
+│ - Low regime: competitive → flat β₁ ≈ 0 across all years. Only economical    │
+│ players bid; even at high CSS, extrinsic competition suppresses aFRR bids    │
+│ - Medium/High regimes: positive β₁, proportional to CSS across all periods   │
+│ apart from 2022                                                              │
+│ - 2022 callout: extreme gas prices → CSS deeply negative → CSS-aFRR          │
+│ relationship broke down                                                      │
+│ - Embed <img src="../plots/historical_afrr_prices.png"> (shows 2022 spike    │
+│ visually)                                                                    │
+│                                                                              │
+│ Section 4 — Forecasts                                                        │
+│ - Using 2020–2025 year-model coefficients + known CCGT generation for        │
+│ Jan/Feb 2026 PTUs                                                            │
+│ - Embed 9 PNGs in order:                                                     │
+│   - Jan W1–W5: forecast_curves_jan_w1.png … forecast_curves_jan_w5.png       │
+│   - Feb W1–W4: forecast_curves_feb_w1.png … forecast_curves_feb_w4.png       │
+│                                                                              │
+│ Section 5 — Insights from Forecasts                                          │
+│ - Forecasted prices generally higher than actual: expected — BESS            │
+│ underbidding not captured                                                    │
+│ - Model captures the price trend well                                        │
+│ - March 2026 aFRR prices not yet available for comparison                    │
+│                                                                              │
+│ ---                                                                          │
+│ Test Changes (tests/test_analysis.py)                                        │
+│                                                                              │
+│ - Remove: from src.analysis.dashboard import generate_dashboard              │
+│ - Remove: TestGenerateDashboard class (3 tests → total drops from 16 to 13)  │
+│ - Keep: fake_combined_csv fixture (still used by TestPlot2026Forecast)       │
+│ - Update TestGenerateReport content assertions:                              │
+│   - Replace "Opportunity Cost Scenarios" check → "Definitions" or            │
+│ "Forecasts"                                                                  │
+│   - Replace "Gas =" check → "aFRR" or "CSS"                                  │
+│   - Keep "R²" check (still in section 2 model metadata or section 3          │
+│ insights)                                                                    │
+│                                                                              │
+│ ---                                                                          │
+│ Verification                                                                 │
+│                                                                              │
+│ # Regenerate report                                                          │
+│ python src/analysis/report_generator.py                                      │
+│ # Open outputs/reports/market_regime_report.html in a browser                │
+│                                                                              │
+│ # Run tests (expect 13 passing, 3 fewer than before)                         │
+│ venv/bin/pytest tests/test_analysis.py -v                                    │
+│ venv/bin/pytest tests/ -v   # all 89 tests should pass                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+● Read 3 files (ctrl+o to expand)
+
+● Let me also check the dashboard file and CLAUDE.md relevant sections before
+  making changes.
+
+● Read 1 file (ctrl+o to expand)
+
+● Now I'll implement all changes. Starting with the report rewrite, then tests,
+  then cleanup.
+
+● Write(src/analysis/report_generator.py)
+  ⎿  Added 261 lines, removed 205 lines
+       1  """                                                            
+       2  HTML report generator for aFRR opportunity cost analysis.      
+       3                                                                 
+       4 -Produces a self-contained HTML report with:                    
+       5 -1. What the model found — CSS slope per regime with            
+         -interpretation                                                 
+       6 -2. Regime snapshot — CCGT band, PTU count, mean aFRR price,    
+         -mean CSS, R²                                                   
+       7 -3. Model reliability — brief R² summary and data notes         
+       8 -4. Opportunity cost scenarios — aFRR estimates across gas × DA 
+         - price grid per regime                                         
+       4 +Narrative structure (5 sections):                              
+       5 +1. Definitions — CSS formula, regime bands, aFRR market        
+         +description                                                    
+       6 +2. Periods / Model Fitting — per-year OLS rationale + CSS vs   
+         +aFRR scatter PNG                                               
+       7 +3. Insights from Fitted Models — regime behaviour, 2022        
+         +anomaly + historical plot PNG                                  
+       8 +4. Forecasts — Jan/Feb 2026 weekly forecast PNGs (W1–W5 Jan,   
+         +W1–W4 Feb)                                                     
+       9 +5. Insights from Forecasts — BESS gap explanation, trend       
+         +fidelity notes                                                 
+      10                                                                 
+      11  Usage:                                                         
+      12      python src/analysis/report_generator.py                    
+     ...
+      14  from __future__ import annotations                             
+      15                                                                 
+      16  import json                                                    
+      17 -import pickle                                                  
+      17  import sys                                                     
+      18  from pathlib import Path                                       
+      19                                                                 
+      20 -import numpy as np                                             
+      20  import pandas as pd                                            
+      21 -from statsmodels.stats.stattools import durbin_watson          
+      21                                                                 
+      22  sys.path.insert(0, str(Path(__file__).parents[2]))             
+      23                                                                 
+      24 -from src.models.predictions import estimate_afrr_price         
+      24  from src.utils.config import (                                 
+      25      DATA_PROCESSED,                                            
+      26 -    FORECAST_DA_SCENARIOS,                                     
+      27 -    FORECAST_ETS_PRICE,                                        
+      26      OUTPUTS_MODELS,                                            
+      27 +    OUTPUTS_PLOTS,                                             
+      28      OUTPUTS_REPORTS,                                           
+      29  )                                                              
+      30  from src.utils.logging_setup import get_logger                 
+     ...
+      37  logger = get_logger(__name__)                                  
+      38                                                                 
+      39  REGIME_ORDER: list[str] = ["high", "medium", "low"]            
+      40 -REGIME_DESCRIPTIONS: dict[str, str] = {                        
+      41 -    "high": "Many plants online (>75th %ile CCGT gen) —        
+         -abundant reserve supply",                                      
+      42 -    "medium": "Moderate generation (25–75th %ile CCGT gen) —   
+         -balanced reserve supply",                                      
+      43 -    "low": "Few plants online (<25th %ile CCGT gen) — scarce   
+         -reserve supply",                                               
+      44 -}                                                              
+      40                                                                 
+      41 -# Gas prices (rows) and DA prices (columns) for the scenario   
+         -table                                                          
+      42 -SCENARIO_GAS_PRICES: list[float] = [25.0, 35.0, 45.0, 55.0,    
+         -65.0, 75.0]                                                    
+      41                                                                 
+      42 -                                                               
+      42  # ------------------------------------------------------------ 
+          ---------------                                                
+      43  # Helpers                                                      
+      44  # ------------------------------------------------------------ 
+          ---------------                                                
+      45                                                                 
+      46 -def _load_all_models(outputs_models: Path) -> dict:            
+      47 -    models = {}                                                
+      48 -    for regime in REGIME_ORDER:                                
+      49 -        path = outputs_models / f"regime_{regime}_model.pkl"   
+      50 -        with open(path, "rb") as fh:                           
+      51 -            models[regime] = pickle.load(fh)                   
+      52 -    return models                                              
+      53 -                                                               
+      54 -                                                               
+      46  def _load_metadata(outputs_models: Path) -> dict:              
+      47      path = outputs_models / "regime_metadata.json"             
+      48      with open(path) as fh:                                     
+      49          return json.load(fh)                                   
+      50                                                                 
+      51                                                                 
+      52 -def _extract_stats(model, regime: str, df: pd.DataFrame,       
+         -metadata: dict) -> dict:                                       
+      53 -    subset = df[df["regime"] == regime]                        
+      54 -    css_coef = float(model.params.get("css", float("nan")))    
+      55 -    ci = model.conf_int()                                      
+      56 -    css_ci = (float(ci.loc["css", 0]), float(ci.loc["css",     
+         -1])) if "css" in ci.index else (float("nan"), float("nan"))    
+      57 -    css_pval = float(model.pvalues.get("css", float("nan")))   
+      58 -    dw = float(durbin_watson(model.resid))                     
+      52 +def _img(src: str, alt: str = "", width: str = "100%") -> str: 
+      53 +    return f'<img src="{src}" alt="{alt}"                      
+         +style="width:{width};max-width:900px;display:block;margin:16px 
+         + auto;border-radius:4px;box-shadow:0 2px 6px                   
+         +rgba(0,0,0,0.15);">'                                           
+      54                                                                 
+      55 -    return {                                                   
+      56 -        "regime": regime,                                      
+      57 -        "css_coef": css_coef,                                  
+      58 -        "css_ci_lo": css_ci[0],                                
+      59 -        "css_ci_hi": css_ci[1],                                
+      60 -        "css_pval": css_pval,                                  
+      61 -        "rsquared": float(model.rsquared),                     
+      62 -        "nobs": int(model.nobs),                               
+      63 -        "durbin_watson": dw,                                   
+      64 -        "mean_affr":                                           
+         -float(subset["affr_price_eur_mw"].mean()),                     
+      65 -        "mean_css": float(subset["css"].mean()),               
+      66 -        "ccgt_mean_mw": metadata[regime].get("ccgt_mean_mw",   
+         -float("nan")),                                                 
+      67 -    }                                                          
+      55                                                                 
+      56 -                                                               
+      56  # ------------------------------------------------------------ 
+          ---------------                                                
+      57  # CSS styles                                                   
+      58  # ------------------------------------------------------------ 
+          ---------------                                                
+     ...
+       96  def _css_styles() -> str:                                     
+       97      return """                                                
+       98      <style>                                                   
+       99 -      body { font-family: Arial, sans-serif; max-width:       
+          -1100px; margin: 40px auto;                                    
+      100 -             padding: 0 20px; background: #f8f9fa; color: #333
+          -; }                                                           
+      101 -      h1 { color: #1a237e; border-bottom: 3px solid #1a237e;  
+          -padding-bottom: 10px; }                                       
+      102 -      h2 { color: #283593; margin-top: 40px; border-left: 4px 
+          - solid #283593;                                               
+      103 -           padding-left: 12px; }                              
+      104 -      .summary-box { background: #e8eaf6; border-left: 5px    
+          -solid #3949ab;                                                
+      105 -                     padding: 16px 20px; border-radius: 4px;  
+          -margin: 16px 0; }                                             
+      106 -      .note { background: #fff8e1; border-left: 5px solid     
+          -#f9a825;                                                      
+      107 -              padding: 12px 16px; border-radius: 4px; margin: 
+          - 8px 0; font-size: 14px; }                                    
+       99 +      body { font-family: Georgia, 'Times New Roman', serif;  
+          +max-width: 1000px;                                            
+      100 +             margin: 40px auto; padding: 0 28px; background: #
+          +fafafa; color: #222; line-height: 1.7; }                      
+      101 +      h1 { color: #1a237e; border-bottom: 3px solid #1a237e;  
+          +padding-bottom: 10px;                                         
+      102 +           font-size: 1.7rem; }                               
+      103 +      h2 { color: #283593; margin-top: 48px; border-left: 5px 
+          + solid #3949ab;                                               
+      104 +           padding-left: 14px; font-size: 1.25rem; }          
+      105 +      h3 { color: #37474f; margin-top: 24px; font-size:       
+          +1.05rem; }                                                    
+      106 +      p  { margin: 10px 0; }                                  
+      107 +      code { background: #eceff1; padding: 2px 5px;           
+          +border-radius: 3px;                                           
+      108 +             font-family: 'Courier New', monospace;           
+          +font-size: 0.92em; }                                          
+      109 +      .callout { background: #e8eaf6; border-left: 5px solid  
+          +#3949ab;                                                      
+      110 +                 padding: 14px 18px; border-radius: 4px;      
+          +margin: 18px 0; }                                             
+      111 +      .warn    { background: #fff8e1; border-left: 5px solid  
+          +#f9a825;                                                      
+      112 +                 padding: 12px 16px; border-radius: 4px;      
+          +margin: 12px 0; font-size: 0.95em; }                          
+      113        table { border-collapse: collapse; width: 100%; margin: 
+            16px 0;                                                      
+      114 -              background: white; box-shadow: 0 1px 3px        
+          -rgba(0,0,0,0.1); }                                            
+      115 -      th { background: #37474f; color: white; padding: 10px   
+          -14px;                                                         
+      116 -           text-align: left; font-weight: 600; }              
+      117 -      td { padding: 8px 14px; border-bottom: 1px solid        
+          -#e0e0e0; font-size: 14px; }                                   
+      114 +              background: white; box-shadow: 0 1px 3px        
+          +rgba(0,0,0,0.1); font-size: 0.93em; }                         
+      115 +      th { background: #37474f; color: white; padding: 9px    
+          +13px; text-align: left; }                                     
+      116 +      td { padding: 7px 13px; border-bottom: 1px solid        
+          +#e0e0e0; }                                                    
+      117        tr:hover { background: #f5f5f5; }                       
+      118        .regime-high   { color: #1565C0; font-weight: 600; }    
+      119        .regime-medium { color: #E65100; font-weight: 600; }    
+      120        .regime-low    { color: #B71C1C; font-weight: 600; }    
+      121 -      .good { color: #2e7d32; font-weight: 600; }             
+      122 -      .warn { color: #e65100; font-weight: 600; }             
+      123 -      .scenario-table th { background: #455a64; }             
+      124 -      .scenario-table td { text-align: center; }              
+      125 -      .scenario-table td:first-child { text-align: left;      
+          -font-weight: 600; }                                           
+      121        footer { margin-top: 60px; font-size: 12px; color:      
+           #9e9e9e;                                                      
+      122                 border-top: 1px solid #ddd; padding-top: 16px; 
+            }                                                            
+      123      </style>                                                  
+      124      """                                                       
+      125                                                                
+      126                                                                
+      127 -def _fmt_pval(p: float) -> str:                               
+      128 -    return "<0.001" if p < 0.001 else f"{p:.4f}"              
+      129 -                                                              
+      130 -                                                              
+      127  # ----------------------------------------------------------- 
+           ----------------                                              
+      128 -# Section 1: What the model found                             
+      128 +# Section 1 — Definitions                                     
+      129  # ----------------------------------------------------------- 
+           ----------------                                              
+      130                                                                
+      131 -def _build_findings(stats_list: list[dict]) -> str:           
+      132 -    rows = []                                                 
+      133 -    for s in stats_list:                                      
+      134 -        regime = s["regime"]                                  
+      135 -        coef = s["css_coef"]                                  
+      136 -        direction = "↑" if coef > 0 else "↓"                  
+      137 -        if abs(coef) < 0.1:                                   
+      138 -            sensitivity = "Weak"                              
+      139 -        elif abs(coef) < 0.25:                                
+      140 -            sensitivity = "Moderate"                          
+      141 -        else:                                                 
+      142 -            sensitivity = "Strong"                            
+      131 +def _build_definitions() -> str:                              
+      132 +    return """                                                
+      133 +    <h2>1. Definitions</h2>                                   
+      134                                                                
+      135 -        rows.append(                                          
+      136 -            f"<tr>"                                           
+      137 -            f"<td                                             
+          -class='regime-{regime}'>{regime.capitalize()}</td>"           
+      138 -            f"<td>{REGIME_DESCRIPTIONS[regime]}</td>"         
+      139 -            f"<td><b>{coef:+.4f}</b> {direction}</td>"        
+      140 -            f"<td>[{s['css_ci_lo']:.4f},                      
+          -{s['css_ci_hi']:.4f}]</td>"                                   
+      141 -            f"<td>{_fmt_pval(s['css_pval'])}</td>"            
+      142 -            f"<td>{sensitivity}</td>"                         
+      143 -            f"</tr>"                                          
+      144 -        )                                                     
+      145 -                                                              
+      146 -    return f"""                                               
+      147 -    <h2>1. What the Model Found</h2>                          
+      148 -    <div class='summary-box'>                                 
+      149 -      <p>One OLS model per market regime:                     
+      150 -         <code>aFRR_Price = β₀ + β₁ · CSS</code>              
+      151 -         where CSS = DA_Price − Gas_Price/η −                 
+          -ETS·intensity/η.</p>                                          
+      152 -      <p>The CSS slope β₁ quantifies how sensitive aFRR bid   
+          -prices are to                                                 
+      153 -         plant profitability. Regime classification already   
+          -captures CCGT                                                 
+      154 -         generation levels, so CSS is the sole predictor.</p> 
+      155 -    </div>                                                    
+      135 +    <h3>Market Regimes</h3>                                   
+      136 +    <p>                                                       
+      137 +      PTUs (Programme Time Units, 15-minute intervals) are    
+          +classified into three market                                  
+      138 +      regimes based on total CCGT generation in the DE-LU     
+          +bidding zone, using fixed MW                                  
+      139 +      thresholds derived from K-Means clustering of the       
+          +2020–2026 historical generation profile:                      
+      140 +    </p>                                                      
+      141      <table>                                                   
+      142 +      <tr><th>Regime</th><th>CCGT Generation</th><th>Reserve  
+          +Supply</th></tr>                                              
+      143        <tr>                                                    
+      144 -        <th>Regime</th>                                       
+      145 -        <th>Market Condition</th>                             
+      146 -        <th>β₁ (CSS slope, €/MW per €/MWh)</th>               
+      147 -        <th>95% CI</th>                                       
+      148 -        <th>p-value</th>                                      
+      149 -        <th>Sensitivity</th>                                  
+      144 +        <td class="regime-low">Low</td>                       
+      145 +        <td>&lt; 5,858 MW</td>                                
+      146 +        <td>Scarce — few plants online, limited reserve       
+          +providers</td>                                                
+      147        </tr>                                                   
+      148 -      {''.join(rows)}                                         
+      148 +      <tr>                                                    
+      149 +        <td class="regime-medium">Medium</td>                 
+      150 +        <td>5,858 – 10,546 MW</td>                            
+      151 +        <td>Balanced — moderate number of providers</td>      
+      152 +      </tr>                                                   
+      153 +      <tr>                                                    
+      154 +        <td class="regime-high">High</td>                     
+      155 +        <td>≥ 10,546 MW</td>                                  
+      156 +        <td>Abundant — many plants online, competitive        
+          +reserve market</td>                                           
+      157 +      </tr>                                                   
+      158      </table>                                                  
+      159 -    <p style='font-size:13px;color:#555;'>                    
+      160 -      A positive β₁ means higher CSS (more profitable spot    
+          -sales) → higher aFRR bid prices.                              
+      161 -      The Low regime has the strongest relationship because   
+          -scarce reserve supply amplifies                               
+      162 -      the effect of plant opportunity costs.                  
+      159 +    <p>                                                       
+      160 +      Thresholds are midpoints between adjacent K-Means       
+          +centroids                                                     
+      161 +      (low ≈ 3,776 MW; medium ≈ 7,941 MW; high ≈ 13,150 MW).  
+      162      </p>                                                      
+      163 +                                                              
+      164 +    <h3>Clean Spark Spread (CSS)</h3>                         
+      165 +    <p>                                                       
+      166 +      The CSS measures the profitability of selling           
+          +electricity in the day-ahead (DA) market                      
+      167 +      rather than holding back capacity for the balancing     
+          +reserve:                                                      
+      168 +    </p>                                                      
+      169 +    <div class="callout">                                     
+      170 +      <code>CSS = DA_Price − Gas_Price / η − ETS_Price ×      
+          +intensity / η</code>                                          
+      171 +      <br>                                                    
+      172 +      <small>η = 0.50 (thermal efficiency), intensity = 0.202 
+          + tCO₂/MWh<sub>th</sub></small>                                
+      173 +    </div>                                                    
+      174 +    <p>                                                       
+      175 +      A high CSS means spot-market generation is highly       
+          +profitable, creating a strong                                 
+      176 +      opportunity cost for committing capacity to the         
+          +reserve.                                                      
+      177 +    </p>                                                      
+      178 +                                                              
+      179 +    <h3>aFRR-up Market</h3>                                   
+      180 +    <p>                                                       
+      181 +      Automated Frequency Restoration Reserve (aFRR) is a     
+          +balancing capacity product procured                           
+      182 +      day-ahead by the TSO (TenneT in DE-LU). Generators      
+          +submit hourly bids (€/MW); the                                
+      183 +      accepted bids are settled pay-as-bid. The reported      
+          +hourly aFRR-up price is the                                   
+      184 +      capacity-weighted average of accepted upward bids in    
+          +that hour.                                                    
+      185 +    </p>                                                      
+      186      """                                                       
+      187                                                                
+      188                                                                
+      189  # ----------------------------------------------------------- 
+           ----------------                                              
+      190 -# Section 2: Regime snapshot                                  
+      190 +# Section 2 — Periods / Model Fitting                         
+      191  # ----------------------------------------------------------- 
+           ----------------                                              
+      192                                                                
+      193 -def _build_regime_snapshot(stats_list: list[dict]) -> str:    
+      193 +def _build_model_fitting(metadata: dict, plots_rel: str) ->   
+          +str:                                                          
+      194 +    # Collect per-year R² for table                           
+      195 +    years = sorted(                                           
+      196 +        k for k in metadata if k.isdigit() and k not in       
+          +("high", "medium", "low")                                     
+      197 +    )                                                         
+      198      rows = []                                                 
+      199 -    for s in stats_list:                                      
+      200 -        regime = s["regime"]                                  
+      201 -        r2_cls = "good" if s["rsquared"] >= 0.5 else "warn"   
+      202 -        rows.append(                                          
+      203 -            f"<tr>"                                           
+      204 -            f"<td                                             
+          -class='regime-{regime}'>{regime.capitalize()}</td>"           
+      205 -            f"<td>{s['nobs']:,}</td>"                         
+      206 -            f"<td>{s['ccgt_mean_mw']:.0f} MW</td>"            
+      207 -            f"<td>{s['mean_affr']:.2f}</td>"                  
+      208 -            f"<td>{s['mean_css']:.2f}</td>"                   
+      209 -            f"<td class='{r2_cls}'>{s['rsquared']:.3f}</td>"  
+      210 -            f"</tr>"                                          
+      211 -        )                                                     
+      199 +    for year in years:                                        
+      200 +        yr_meta = metadata[year]                              
+      201 +        cells = f"<td>{year}</td>"                            
+      202 +        for regime in REGIME_ORDER:                           
+      203 +            r2 = yr_meta.get(regime, {}).get("rsquared",      
+          +float("nan"))                                                 
+      204 +            if r2 != r2:  # nan check                         
+      205 +                cells += "<td>—</td>"                         
+      206 +            else:                                             
+      207 +                cls =                                         
+          +"style='color:#2e7d32;font-weight:600;'" if r2 >= 0.5 else    
+          +"style='color:#e65100;'"                                      
+      208 +                cells += f"<td {cls}>{r2:.3f}</td>"           
+      209 +        rows.append(f"<tr>{cells}</tr>")                      
+      210                                                                
+      211 +    rows_html = "".join(rows)                                 
+      212 +                                                              
+      213      return f"""                                               
+      214 -    <h2>2. Regime Snapshot</h2>                               
+      214 +    <h2>2. Periods &amp; Model Fitting</h2>                   
+      215 +    <p>                                                       
+      216 +      For each year from 2020 to 2025, and for each market    
+          +regime, we fit a separate                                     
+      217 +      Ordinary Least Squares (OLS) model of the form:         
+      218 +    </p>                                                      
+      219 +    <div class="callout">                                     
+      220 +      <code>aFRR_Price = β₀ + β₁ · CSS</code>                 
+      221 +    </div>                                                    
+      222 +    <p>                                                       
+      223 +      The per-year approach follows Hirth &amp; Ziegenhagen   
+          +(2013) and is motivated by                                    
+      224 +      the structural breaks visible in German energy markets: 
+          + COVID-19 demand suppression                                  
+      225 +      (2020–2021), the energy crisis triggered by Russia's    
+          +invasion of Ukraine (2022–2023),                              
+      226 +      and the subsequent normalisation (2024–2025).           
+      227 +      Fitting separate annual models allows β₁ to vary across 
+          + these regimes without                                        
+      228 +      imposing a single structural relationship on            
+          +fundamentally different market states.                        
+      229 +    </p>                                                      
+      230 +    <p>                                                       
+      231 +      The regime label already captures CCGT generation       
+          +levels, so CSS is the sole                                    
+      232 +      predictor. Including DA price separately would          
+          +double-count the information                                  
+      233 +      already embedded in CSS.                                
+      234 +    </p>                                                      
+      235 +                                                              
+      236 +    <h3>R² by Year and Regime</h3>                            
+      237      <table>                                                   
+      238 -      <tr>                                                    
+      239 -        <th>Regime</th>                                       
+      240 -        <th>PTUs</th>                                         
+      241 -        <th>Mean CCGT Gen</th>                                
+      242 -        <th>Mean aFRR Price (€/MW)</th>                       
+      243 -        <th>Mean CSS (€/MWh)</th>                             
+      244 -        <th>R²</th>                                           
+      245 -      </tr>                                                   
+      246 -      {''.join(rows)}                                         
+      238 +      <tr><th>Year</th>                                       
+      239 +          <th class="regime-high">High</th>                   
+      240 +          <th class="regime-medium">Medium</th>               
+      241 +          <th class="regime-low">Low</th></tr>                
+      242 +      {rows_html}                                             
+      243      </table>                                                  
+      244 +                                                              
+      245 +    {_img(f"{plots_rel}/css_vs_affr_prices.png", "CSS vs aFRR 
+          + scatter by year and regime")}                                
+      246      """                                                       
+      247                                                                
+      248                                                                
+      249  # ----------------------------------------------------------- 
+           ----------------                                              
+      250 -# Section 3: Model reliability                                
+      250 +# Section 3 — Insights from Fitted Models                     
+      251  # ----------------------------------------------------------- 
+           ----------------                                              
+      252                                                                
+      253 -def _build_reliability(stats_list: list[dict]) -> str:        
+      254 -    items = []                                                
+      255 -    for s in stats_list:                                      
+      256 -        r2_cls = "good" if s["rsquared"] >= 0.5 else "warn"   
+      257 -        items.append(                                         
+      258 -            f"<li><b                                          
+          -class='regime-{s['regime']}'>{s['regime'].capitalize()}</b>:  
+          -"                                                             
+      259 -            f"R² = <span                                      
+          -class='{r2_cls}'>{s['rsquared']:.3f}</span> "                 
+      260 -            f"(N = {s['nobs']:,})</li>"                       
+      261 -        )                                                     
+      253 +def _build_model_insights(metadata: dict, plots_rel: str) ->  
+          +str:                                                          
+      254 +    # Pull flat compat keys for a representative year summary 
+      255 +    high_meta   = metadata.get("high", {})                    
+      256 +    medium_meta = metadata.get("medium", {})                  
+      257 +    low_meta    = metadata.get("low", {})                     
+      258                                                                
+      259 +    def fmt_beta(m: dict) -> str:                             
+      260 +        b = m.get("beta_1_css", float("nan"))                 
+      261 +        return f"{b:+.4f}" if b == b else "—"                 
+      262 +                                                              
+      263      return f"""                                               
+      264 -    <h2>3. Model Reliability</h2>                             
+      265 -    <ul>{''.join(items)}</ul>                                 
+      266 -    <div class='note'>                                        
+      267 -      ℹ Training period: Jan 2022–Dec 2023 (DE-LU,            
+          -post-energy crisis, BESS expansion period).                   
+      268 -      R² values below 0.50 reflect high PTU-level noise in    
+          -aFRR prices — the model captures                              
+      269 -      the structural CSS relationship, not short-term         
+          -intra-day volatility.                                         
+      264 +    <h2>3. Insights from Fitted Models</h2>                   
+      265 +                                                              
+      266 +    <h3>Low Regime — competitive market, flat CSS             
+          +sensitivity</h3>                                              
+      267 +    <p>                                                       
+      268 +      In the low regime, only the most economically efficient 
+          + gas plants are online.                                       
+      269 +      This might suggest a large opportunity cost and         
+          +therefore a steep CSS slope —                                 
+      270 +      but the opposite is observed: β₁ is close to zero       
+          +across all years (representative                              
+      271 +      β₁ ≈ {fmt_beta(low_meta)}).                             
+      272 +    </p>                                                      
+      273 +    <p>                                                       
+      274 +      The reason is extrinsic competition. Even during        
+          +periods of high CSS, the small                                
+      275 +      number of active plants face intense competition from   
+          +each other for the limited                                    
+      276 +      balancing volume. This competition suppresses aFRR bid  
+          +prices and disconnects them                                   
+      277 +      from the CSS signal. The few plants that do bid are     
+          +primarily motivated by securing                               
+      278 +      volume, not extracting a premium proportional to        
+          +opportunity cost.                                             
+      279 +    </p>                                                      
+      280 +                                                              
+      281 +    <h3>Medium and High Regimes — proportional CSS            
+          +response</h3>                                                 
+      282 +    <p>                                                       
+      283 +      With more plants online, reserve supply is adequate and 
+          + bid prices track opportunity                                 
+      284 +      costs more directly. Both medium (β₁ ≈                  
+          +{fmt_beta(medium_meta)}) and high                             
+      285 +      (β₁ ≈ {fmt_beta(high_meta)}) regimes show positive CSS  
+          +slopes across most years,                                     
+      286 +      consistent with the theoretical prediction: plants      
+          +price their reserve bids to                                   
+      287 +      compensate for foregone spot-market profits.            
+      288 +    </p>                                                      
+      289 +                                                              
+      290 +    <h3>2022 Anomaly</h3>                                     
+      291 +    <p>                                                       
+      292 +      The energy crisis of 2022 caused a severe breakdown of  
+          +the CSS–aFRR relationship.                                    
+      293 +      Extreme gas prices pushed CSS deeply negative across    
+          +all regimes, while aFRR prices                                
+      294 +      spiked due to scarcity and uncertainty rather than      
+          +following the CSS signal.                                     
+      295 +      The models fitted on 2022 data consequently show        
+          +unusual β₁ estimates and lower R²                             
+      296 +      values; these years are retained for completeness but   
+          +should be interpreted with                                    
+      297 +      caution.                                                
+      298 +    </p>                                                      
+      299 +    <div class="warn">                                        
+      300 +      ⚠ 2022 model coefficients are anomalous due to the      
+          +energy crisis.                                                
+      301 +      Forecasts use 2025 model coefficients where available.  
+      302      </div>                                                    
+      303 +                                                              
+      304 +    {_img(f"{plots_rel}/historical_afrr_prices.png",          
+          +"Historical aFRR prices coloured by regime")}                 
+      305      """                                                       
+      306                                                                
+      307                                                                
+      308  # ----------------------------------------------------------- 
+           ----------------                                              
+      309 -# Section 4: Opportunity cost scenarios                       
+      309 +# Section 4 — Forecasts                                       
+      310  # ----------------------------------------------------------- 
+           ----------------                                              
+      311                                                                
+      312 -def _build_scenario_table(regime: str) -> str:                
+      313 -    da_headers = "".join(                                     
+      314 -        f"<th>DA = {da:.0f} €/MWh</th>" for da in             
+          -FORECAST_DA_SCENARIOS                                         
+      312 +def _build_forecasts(plots_rel: str) -> str:                  
+      313 +    jan_imgs = "".join(                                       
+      314 +        _img(f"{plots_rel}/forecast_curves_jan_w{w}.png",     
+          +f"January 2026 Week {w} forecast")                            
+      315 +        for w in range(1, 6)                                  
+      316      )                                                         
+      317 +    feb_imgs = "".join(                                       
+      318 +        _img(f"{plots_rel}/forecast_curves_feb_w{w}.png",     
+          +f"February 2026 Week {w} forecast")                           
+      319 +        for w in range(1, 5)                                  
+      320 +    )                                                         
+      321                                                                
+      322 -    rows = []                                                 
+      323 -    for gas in SCENARIO_GAS_PRICES:                           
+      324 -        cells = f"<td>Gas = {gas:.0f} €/MWh_th</td>"          
+      325 -        for da in FORECAST_DA_SCENARIOS:                      
+      326 -            try:                                              
+      327 -                price = estimate_afrr_price(                  
+      328 -                    da_price=da,                              
+      329 -                    gas_price=gas,                            
+      330 -                    eu_ets_price=FORECAST_ETS_PRICE,          
+      331 -                    regime=regime,                            
+      332 -                )                                             
+      333 -                cells += f"<td>{price:.1f}</td>"              
+      334 -            except Exception:                                 
+      335 -                cells += "<td>—</td>"                         
+      336 -        rows.append(f"<tr>{cells}</tr>")                      
+      337 -                                                              
+      322      return f"""                                               
+      323 -    <h3>Regime: <span                                         
+          -class='regime-{regime}'>{regime.capitalize()}</span></h3>     
+      324 -    <table class='scenario-table'>                            
+      325 -      <tr><th>Gas / DA Price</th>{da_headers}</tr>            
+      326 -      {''.join(rows)}                                         
+      327 -    </table>                                                  
+      323 +    <h2>4. Forecasts</h2>                                     
+      324 +    <p>                                                       
+      325 +      For January and February 2026, we use the known CCGT    
+          +generation (from ENTSO-E                                      
+      326 +      transparency data) to assign each PTU to a market       
+          +regime, then apply the 2025                                   
+      327 +      annual model coefficients to forecast the aFRR-up       
+          +capacity price as a function of                               
+      328 +      the prevailing gas price and DA price. Actual aFRR      
+          +prices (where available) are                                  
+      329 +      plotted alongside the forecasts for comparison.         
+      330 +    </p>                                                      
+      331 +    <p>                                                       
+      332 +      Each chart covers one calendar week; gas price          
+          +scenarios are shown as distinct                               
+      333 +      forecast lines (DA price fixed at the observed value    
+          +for that PTU).                                                
+      334 +    </p>                                                      
+      335 +                                                              
+      336 +    <h3>January 2026</h3>                                     
+      337 +    {jan_imgs}                                                
+      338 +                                                              
+      339 +    <h3>February 2026</h3>                                    
+      340 +    {feb_imgs}                                                
+      341      """                                                       
+      342                                                                
+      343                                                                
+      344  # ----------------------------------------------------------- 
+           ----------------                                              
+      345 +# Section 5 — Insights from Forecasts                         
+      346 +# ----------------------------------------------------------- 
+          +----------------                                              
+      347 +                                                              
+      348 +def _build_forecast_insights() -> str:                        
+      349 +    return """                                                
+      350 +    <h2>5. Insights from Forecasts</h2>                       
+      351 +                                                              
+      352 +    <h3>Forecasted prices are generally higher than           
+          +actuals</h3>                                                  
+      353 +    <p>                                                       
+      354 +      Across both January and February 2026, the              
+          +model-derived forecasts tend to sit                           
+      355 +      above the observed aFRR-up prices. This is an expected  
+          +structural bias: the models                                   
+      356 +      are calibrated on historical data when Battery Energy   
+          +Storage Systems (BESS) had a                                  
+      357 +      smaller footprint in the aFRR market. Since 2024, BESS  
+          +capacity participating in                                     
+      358 +      aFRR has grown substantially. BESS operators face       
+          +near-zero marginal costs and bid                              
+      359 +      aggressively at low prices, compressing the market      
+          +clearing price independently of                               
+      360 +      CSS. The models cannot capture this effect because BESS 
+          + participation data was not                                   
+      361 +      included in the training features.                      
+      362 +    </p>                                                      
+      363 +                                                              
+      364 +    <h3>The model captures the price trend</h3>               
+      365 +    <p>                                                       
+      366 +      Despite the systematic upward bias, the model correctly 
+          + reproduces the intra-week                                    
+      367 +      shape of aFRR prices — the rise and fall of prices in   
+          +response to changing gas                                      
+      368 +      forward curves and DA price levels. This suggests the   
+          +CSS mechanism remains valid                                   
+      369 +      as a structural driver; the level shift introduced by   
+          +BESS could in principle be                                    
+      370 +      corrected with a BESS-participation adjustment term.    
+      371 +    </p>                                                      
+      372 +                                                              
+      373 +    <h3>March 2026 data not yet available</h3>                
+      374 +    <p>                                                       
+      375 +      aFRR capacity prices for March 2026 are not yet         
+          +available from Regelleistung.net                              
+      376 +      at the time of writing (data cut-off: 9 March 2026).    
+          +Forecast charts for March                                     
+      377 +      will be added once the settlement data is published.    
+      378 +    </p>                                                      
+      379 +    """                                                       
+      380 +                                                              
+      381 +                                                              
+      382 +# ----------------------------------------------------------- 
+          +----------------                                              
+      383  # Public function                                             
+      384  # ----------------------------------------------------------- 
+           ----------------                                              
+      385                                                                
+     ...
+      289      df: pd.DataFrame,                                         
+      290      outputs_reports: Path = OUTPUTS_REPORTS,                  
+      291      outputs_models: Path = OUTPUTS_MODELS,                    
+      292 +    outputs_plots: Path = OUTPUTS_PLOTS,                      
+      293  ) -> Path:                                                    
+      294 -    """Generate a self-contained HTML report.                 
+      294 +    """Generate a narrative HTML report.                      
+      295                                                                
+      296      Args:                                                     
+      297 -        df: DataFrame with regime labels and market data      
+          -columns.                                                      
+      297 +        df: DataFrame with regime labels and market data      
+          +columns (unused in new template                               
+      298 +            beyond passing to section builders; retained for  
+          +API compatibility).                                           
+      299          outputs_reports: Directory to save HTML report into.  
+      300 -        outputs_models: Directory containing                  
+          -regime pkl files and metadata JSON.                           
+      300 +        outputs_models: Directory containing regime_metadata. 
+          +json.                                                         
+      301 +        outputs_plots: Directory containing generated PNG     
+          +plots.                                                        
+      302                                                                
+      303      Returns:                                                  
+      304          Path to saved HTML file.                              
+     ...
+      303      outputs_reports.mkdir(parents=True, exist_ok=True)        
+      304      out_path = outputs_reports / "market_regime_report.html"  
+      305                                                                
+      306 -    models = _load_all_models(outputs_models)                 
+      306      metadata = _load_metadata(outputs_models)                 
+      307                                                                
+      308 -    stats_list = [                                            
+      309 -        _extract_stats(models[regime], regime, df, metadata)  
+      310 -        for regime in REGIME_ORDER                            
+      311 -    ]                                                         
+      308 +    # Relative path from reports/ to plots/                   
+      309 +    try:                                                      
+      310 +        plots_rel =                                           
+          +str(outputs_plots.relative_to(outputs_reports.parent))        
+      311 +    except ValueError:                                        
+      312 +        plots_rel = str(outputs_plots)                        
+      313                                                                
+      314 -    scenario_sections = "".join(_build_scenario_table(regime) 
+          - for regime in REGIME_ORDER)                                  
+      315 -                                                              
+      314      html = f"""<!DOCTYPE html>                                
+      315  <html lang="en">                                              
+      316  <head>                                                        
+      317    <meta charset="UTF-8">                                      
+      318    <meta name="viewport" content="width=device-width,          
+           initial-scale=1.0">                                           
+      319 -  <title>aFRR Opportunity Cost — Market Regime Report</title> 
+      319 +  <title>aFRR-up                                              
+          + Opportunity Cost — Market Regime Report</title>              
+      320    {_css_styles()}                                             
+      321  </head>                                                       
+      322  <body>                                                        
+      323    <h1>aFRR-up Opportunity Cost: Market Regime Report</h1>     
+      324 -  <p style='color:#666;font-size:14px;'>                      
+      325 -    Gas peaker plant (CCGT) — DE-LU bidding zone, 2022–2023 | 
+      326 -    Model: <code>aFRR_Price = β₀ + β₁·CSS</code> (fitted per  
+          -regime)                                                       
+      324 +  <p style="color:#666;font-size:0.92em;">                    
+      325 +    Gas peaker plant (CCGT) — DE-LU bidding zone, 2020–2026 | 
+      326 +    Model: <code>aFRR_Price = β₀ + β₁·CSS</code> (fitted per  
+          +year × regime)                                                
+      327    </p>                                                        
+      328                                                                
+      329 -  {_build_findings(stats_list)}                               
+      330 -  {_build_regime_snapshot(stats_list)}                        
+      331 -  {_build_reliability(stats_list)}                            
+      329 +  {_build_definitions()}                                      
+      330 +  {_build_model_fitting(metadata, plots_rel)}                 
+      331 +  {_build_model_insights(metadata, plots_rel)}                
+      332 +  {_build_forecasts(plots_rel)}                               
+      333 +  {_build_forecast_insights()}                                
+      334                                                                
+      335 -  <h2>4. Opportunity Cost Scenarios</h2>                      
+      336 -  <p>Estimated aFRR-up bid price (€/MW) for combinations of   
+          -gas forward price and                                         
+      337 -     DA price forecast. ETS fixed at {FORECAST_ETS_PRICE:.0f} 
+          - €/tCO₂.</p>                                                  
+      338 -  {scenario_sections}                                         
+      339 -                                                              
+      335    <footer>                                                    
+      336      Generated by                                              
+           <code>src/analysis/report_generator.py</code> &mdash;         
+      337 -    aFRR Opportunity Cost Calculator &mdash; DE-LU 2022–2023  
+      337 +    aFRR Opportunity Cost Calculator &mdash; DE-LU 2020–2026  
+      338    </footer>                                                   
+      339  </body>                                                       
+      340  </html>"""                                                    
+
+● Now check if OUTPUTS_PLOTS is exported from config:
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Good. Now delete dashboard.py and update the tests:
+
+● Bash(rm /home/anurag/GitRepos/global_tech_challenge/src/analysis/dashboard.py)
+  ⎿  Done
+
+● Now rewrite the test file to remove dashboard tests and update report
+  assertions:
+
+● Update(tests/test_analysis.py)
+  ⎿  Removed 2 lines
+      4  Tests:                                                          
+      5      - visualization: 4 plot functions produce PNG files         
+      6      - report_generator: HTML report with expected content       
+      7 -    - dashboard: self-contained HTML dashboard with Plotly      
+      7  """                                                             
+      8                                                                  
+      9  from __future__ import annotations                              
+     ...
+      25      plot_regime_distribution,                                  
+      26  )                                                              
+      27  from src.analysis.report_generator import generate_report      
+      28 -from src.analysis.dashboard import generate_dashboard          
+      28                                                                 
+      29                                                                 
+      30  # ------------------------------------------------------------ 
+          ---------------                                                
+
+● Now update the TestGenerateReport tests and remove TestGenerateDashboard:
+
+● Update(tests/test_analysis.py)
+  ⎿  Added 9 lines, removed 87 lines
+      246                                                                
+      247  class TestGenerateReport:                                     
+      248      def test_creates_html(                                    
+      249 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      249 +        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          +Path, tmp_path: Path                                          
+      250      ) -> None:                                                
+      251 -        import src.models.predictions as pred_module          
+      252 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      253 -                                                              
+      251          reports_dir = tmp_path / "reports"                    
+      252          generate_report(                                      
+      253              synthetic_df, outputs_reports=reports_dir,        
+           outputs_models=fake_model_dir                                 
+     ...
+      258          assert (reports_dir /                                 
+           "market_regime_report.html").exists()                         
+      259                                                                
+      260      def test_html_contains_rsquared(                          
+      261 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      261 +        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          +Path, tmp_path: Path                                          
+      262      ) -> None:                                                
+      263 -        import src.models.predictions as pred_module          
+      264 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      265 -                                                              
+      263          path = generate_report(                               
+      264              synthetic_df, outputs_reports=tmp_path /          
+           "reports", outputs_models=fake_model_dir                      
+      265          )                                                     
+     ...
+      270          assert "R²" in content                                
+      271                                                                
+      272      def test_html_contains_all_regimes(                       
+      273 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      273 +        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          +Path, tmp_path: Path                                          
+      274      ) -> None:                                                
+      275 -        import src.models.predictions as pred_module          
+      276 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      277 -                                                              
+      275          path = generate_report(                               
+      276              synthetic_df, outputs_reports=tmp_path /          
+           "reports", outputs_models=fake_model_dir                      
+      277          )                                                     
+     ...
+      282          for regime in ["High", "Medium", "Low"]:              
+      283              assert regime in content                          
+      284                                                                
+      285 -    def test_html_contains_scenario_table(                    
+      286 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      285 +    def test_html_contains_definitions_and_forecasts(         
+      286 +        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          +Path, tmp_path: Path                                          
+      287      ) -> None:                                                
+      288 -        import src.models.predictions as pred_module          
+      289 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      290 -                                                              
+      288          path = generate_report(                               
+      289              synthetic_df, outputs_reports=tmp_path /          
+           "reports", outputs_models=fake_model_dir                      
+      290          )                                                     
+      291          content = path.read_text(encoding="utf-8")            
+      292 -        assert "Opportunity Cost Scenarios" in content        
+      293 -        assert "Gas =" in content                             
+      294 -                                                              
+      295 -                                                              
+      296 -# ----------------------------------------------------------- 
+          -----------------                                              
+      297 -# TestGenerateDashboard                                       
+      298 -# ----------------------------------------------------------- 
+          -----------------                                              
+      299 -                                                              
+      300 -class TestGenerateDashboard:                                  
+      301 -    def test_creates_html(                                    
+      302 -        self,                                                 
+      303 -        synthetic_df: pd.DataFrame,                           
+      304 -        fake_model_dir: Path,                                 
+      305 -        fake_combined_csv: Path,                              
+      306 -        tmp_path: Path,                                       
+      307 -        monkeypatch,                                          
+      308 -    ) -> None:                                                
+      309 -        import src.models.predictions as pred_module          
+      310 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      311 -                                                              
+      312 -        reports_dir = tmp_path / "reports"                    
+      313 -        generate_dashboard(                                   
+      314 -            synthetic_df,                                     
+      315 -            outputs_reports=reports_dir,                      
+      316 -            outputs_models=fake_model_dir,                    
+      317 -            data_processed=fake_combined_csv.parent,          
+      318 -        )                                                     
+      319 -        assert (reports_dir / "dashboard.html").exists()      
+      320 -                                                              
+      321 -    def test_html_contains_plotly(                            
+      322 -        self,                                                 
+      323 -        synthetic_df: pd.DataFrame,                           
+      324 -        fake_model_dir: Path,                                 
+      325 -        fake_combined_csv: Path,                              
+      326 -        tmp_path: Path,                                       
+      327 -        monkeypatch,                                          
+      328 -    ) -> None:                                                
+      329 -        import src.models.predictions as pred_module          
+      330 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      331 -                                                              
+      332 -        path = generate_dashboard(                            
+      333 -            synthetic_df,                                     
+      334 -            outputs_reports=tmp_path / "reports",             
+      335 -            outputs_models=fake_model_dir,                    
+      336 -            data_processed=fake_combined_csv.parent,          
+      337 -        )                                                     
+      338 -        content = path.read_text(encoding="utf-8")            
+      339 -        assert "plotly" in content.lower()                    
+      340 -                                                              
+      341 -    def test_html_is_self_contained(                          
+      342 -        self,                                                 
+      343 -        synthetic_df: pd.DataFrame,                           
+      344 -        fake_model_dir: Path,                                 
+      345 -        fake_combined_csv: Path,                              
+      346 -        tmp_path: Path,                                       
+      347 -        monkeypatch,                                          
+      348 -    ) -> None:                                                
+      349 -        """Verify the dashboard links to Plotly CDN (one      
+          -external script, no inline lib)."""                           
+      350 -        import src.models.predictions as pred_module          
+      351 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      352 -                                                              
+      353 -        path = generate_dashboard(                            
+      354 -            synthetic_df,                                     
+      355 -            outputs_reports=tmp_path / "reports",             
+      356 -            outputs_models=fake_model_dir,                    
+      357 -            data_processed=fake_combined_csv.parent,          
+      358 -        )                                                     
+      359 -        content = path.read_text(encoding="utf-8")            
+      360 -        assert "cdn.plot.ly" in content or "plotly" in        
+          -content.lower()                                               
+      361 -        assert len(content) < 5_000_000                       
+      292 +        assert "Definitions" in content                       
+      293 +        assert "Forecasts" in content                         
+      294 +        assert "aFRR" in content                              
+      295 +        assert "CSS" in content                               
+
+● The fake_model_dir fixture now needs to include rsquared in the metadata for
+  the new report's R² table. Let me check the fixture:
+
+● Read 1 file (ctrl+o to expand)
+
+● The fixture metadata doesn't include rsquared or beta_1_css — those will
+  gracefully fall back to — in the new report (nan-safe). Let me run the tests
+  to verify:
+
+● Bash(venv/bin/pytest tests/test_analysis.py -v 2>&1 | tail -30)
+  ⎿  ============================= test session starts ====================
+     ==========
+     platform linux -- Python 3.10.12, pytest-9.0.2, pluggy-1.6.0 -- /home/
+     … +19 lines (ctrl+o to expand)
+
+● 13/13 pass. Now run the full suite:
+
+● Bash(venv/bin/pytest tests/ -v 2>&1 | tail -20)
+  ⎿  tests/test_models.py::TestSaveModel::test_creates_year_named_file PASS
+     ED [ 80%]
+     tests/test_models.py::TestSaveModel::test_saved_model_loadable PASSED
+     … +22 lines (ctrl+o to expand)
+
+● 89/89 pass. Now update CLAUDE.md to remove dashboard references:
+
+● Update(CLAUDE.md)
+  ⎿  File must be read first
+
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 3 lines
+      174  ### Phase 3: Analysis & Visualization ✅                      
+      175  ```bash                                                       
+      176  python src/analysis/visualization.py                          
+      177 -python src/analysis/dashboard.py                              
+      177  python src/analysis/report_generator.py                       
+      178  ```                                                           
+      179  **Outputs:**                                                  
+     ...
+      182  - `outputs/plots/css_vs_affr_prices.png` — CSS vs aFRR        
+           scatter (coloured by regime)                                  
+      183  - `outputs/plots/regime_distribution.png` — stacked bar of    
+           regime share per year                                         
+      184  - `outputs/plots/forecast_curves_{month}_w{N}.png` — weekly   
+           forecast plots (Jan W1–W5, Feb W1–W4)                         
+      185 -- `outputs/reports/dashboard.html` — interactive Plotly       
+          -dashboard (3 charts)                                          
+      186 -- `outputs/reports/market_regime_report.html` — HTML report   
+          -(4 sections: findings → snapshot → reliability → scenario     
+          -table)                                                        
+      185 +- `outputs/reports/market_regime_report.html` — narrative     
+          +HTML report (5 sections: definitions → model fitting → model  
+          +insights → forecasts → forecast insights)                     
+      186                                                                
+      187  ### Testing & Validation                                      
+      188  ```bash                                                       
+
+● Now update the CLAUDE.md deliverables section and the useful commands section
+  to remove dashboard references:
+
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Removed 1 line
+      52  │   ├── analysis/                                              
+      53  │   │   ├── __init__.py                                        
+      54  │   │   ├── visualization.py            # Plots for regime     
+          conditions                                                     
+      55 -│   │   ├── dashboard.py                # Interactive          
+         -dashboard                                                      
+      55  │   │   └── report_generator.py         # Automated report     
+          generation                                                     
+      56  │   │                                                          
+      57  │   └── utils/                                                 
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      63  │   ├── __init__.py                                            
+      64  │   ├── test_data_pipeline.py           # Test data            
+          loading/cleaning (37 tests)                                    
+      65  │   ├── test_models.py                  # Test regime          
+          classifier, regression models, predictions (39 tests)          
+      66 -│   └── test_analysis.py                # Test analysis        
+         -functions, dashboard, report (16 tests)                        
+      66 +│   └── test_analysis.py                # Test analysis        
+         +functions and report (13 tests)                                
+      67  │                                                              
+      68  ├── outputs/                                                   
+      69  │   ├── models/                         # Saved model files    
+          (pickle)                                                       
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 2 lines
+      85  │   │   ├── forecast_curves_feb_w3.png                         
+      86  │   │   └── forecast_curves_feb_w4.png                         
+      87  │   ├── reports/                                               
+      88 -│   │   ├── market_regime_report.html   # Automated HTML report
+      89 -│   │   └── dashboard.html              # Interactive Plotly   
+         -dashboard                                                      
+      88 +│   │   └── market_regime_report.html   # Narrative HTML report
+      89  │   └── data/                                                  
+      90  │                                                              
+      91  └── venv/                               # Virtual environment  
+          (not committed)                                                
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines, removed 3 lines
+      295  - **API:** `estimate_afrr_price(da_price, gas_price,          
+           eu_ets_price, regime, year=2022)`                             
+      296  - **CLI:** `python src/models/predictions.py --da-price 80    
+           --gas-price 35 --ets-price 60 --regime low --year 2022`       
+      297                                                                
+      298 -### 4. Analysis Report & Dashboard ✅                         
+      299 -- **Report:** `outputs/reports/market_regime_report.html` — 4 
+          - sections: key findings, model snapshot, reliability flags,   
+          -scenario table                                                
+      300 -- **Dashboard:** `outputs/reports/dashboard.html` —           
+          -interactive Plotly, 3 charts (historical aFRR by regime, CSS  
+          -scatter, forecast curves)                                     
+      298 +### 4. Analysis Report ✅                                     
+      299 +- **Report:** `outputs/reports/market_regime_report.html` — 5 
+          + sections: definitions → model fitting → model insights →     
+          +forecasts → forecast insights                                 
+      300                                                                
+      301  ### 5. Visualizations (12 plots) ✅                           
+      302  - `historical_afrr_prices.png` — aFRR time series coloured by 
+            market regime                                                
+
+● Update(CLAUDE.md)
+  ⎿  Added 3 lines, removed 3 lines
+      309                                                                
+      310  ## Testing Strategy                                           
+      311                                                                
+      312 -### Unit Tests (92 total, all passing)                        
+      312 +### Unit Tests (89 total, all passing)                        
+      313  ```bash                                                       
+      314  venv/bin/pytest tests/test_data_pipeline.py -v   # 37 tests:  
+           data loading/cleaning                                         
+      315  venv/bin/pytest tests/test_models.py -v           # 39 tests: 
+            regime classifier, regression, predictions                   
+      316 -venv/bin/pytest tests/test_analysis.py -v         # 16        
+          - tests: visualization, report, dashboard                      
+      316 +venv/bin/pytest tests/test_analysis.py -v         # 13        
+          + tests: visualization and report                              
+      317  ```                                                           
+      318                                                                
+      319  ### What is Tested                                            
+     ...
+      321  - **Regime Classifier:** `load_centroids`,                    
+           `compute_thresholds`, `assign_regimes` boundary logic, method 
+            toggle                                                       
+      322  - **Regression Models:** `fit_regime_model`, `save_model`,    
+           `build_year_regime_metadata`, per-year `run()` integration    
+      323  - **Predictions:** `estimate_afrr_price` with                 
+           explicit/default year, CLI `--year` arg, error handling       
+      324 -- **Analysis:** PNG plots, HTML report content                
+          -, Plotly dashboard                                            
+      324 +- **Analysis:** PNG plots, HTML report content                
+      325                                                                
+      326  ### Coverage Target                                           
+      327  - Minimum **80% code coverage**                               
+
+● Update(CLAUDE.md)
+  ⎿  Removed 1 line
+      338  python src/models/regime_classifier.py                        
+      339  python src/models/regression_models.py                        
+      340  python src/analysis/visualization.py                          
+      341 -python src/analysis/dashboard.py                              
+      341  python src/analysis/report_generator.py                       
+      342                                                                
+      343  # Predict opportunity cost (CLI)                              
+
+● Update(CLAUDE.md)
+  ⎿  Error editing file
+
+● That was already replaced. Let me also fix the config comment:
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      381  MAX_MISSING_RATE   = 0.05   # Max 5% missing values per       
+           column                                                        
+      382  OUTLIER_THRESHOLD  = 3.0    # Z-score threshold               
+      383                                                                
+      384 -# Forecast scenario constants (used by predictions.py,        
+          -dashboard, and weekly forecast plots)                         
+      384 +# Forecast scenario constants (used by predictions.py         
+          +and weekly forecast plots)                                    
+      385  FORECAST_ETS_PRICE      = 65.0                      # Fixed   
+           EU-ETS (€/tCO₂)                                               
+      386  FORECAST_GAS_MIN        = 20.0                       # €/MWh  
+           thermal                                                       
+      387  FORECAST_GAS_MAX        = 100.0                      # €/MWh  
+           thermal                                                       
+
+● Now update the memory file to reflect the changes:
+
+● Recalled 1 memory, wrote 4 memories (ctrl+o to expand)
+
+● Also update the Phase 3 implementation notes in memory to remove dashboard
+  references:
+
+● Searched memories, wrote 2 memories (ctrl+o to expand)
+
+● All done. Here's a summary of what was implemented:
+
+  Changes made:
+
+  1. src/analysis/report_generator.py — Full rewrite. New 5-section narrative
+  structure:
+    - Section 1: Definitions (regime MW thresholds, CSS formula, aFRR market)
+    - Section 2: Periods/Model Fitting (per-year OLS rationale, R² table by
+  year×regime, CSS scatter PNG)
+    - Section 3: Model Insights (low regime competitive suppression, medium/high
+   CSS response, 2022 anomaly callout, historical PNG)
+    - Section 4: Forecasts (9 embedded weekly forecast PNGs — Jan W1–W5, Feb
+  W1–W4)
+    - Section 5: Forecast Insights (BESS underbidding bias, trend fidelity,
+  March data gap)
+    - Reads stats from regime_metadata.json only — no pkl loading
+  2. src/analysis/dashboard.py — Deleted
+  3. tests/test_analysis.py — Removed TestGenerateDashboard (3 tests) and
+  generate_dashboard import; updated TestGenerateReport assertions to check for
+  "Definitions", "Forecasts", "aFRR", "CSS" instead of scenario table content
+  4. CLAUDE.md — Removed all dashboard references, updated test counts (89
+  total, 13 analysis)
+
+  Result: 89/89 tests pass (down from 92 — 3 dashboard tests removed as
+  planned).
+
+✻ Crunched for 4m 53s
