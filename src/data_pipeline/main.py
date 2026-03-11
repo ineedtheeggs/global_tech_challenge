@@ -36,9 +36,12 @@ from src.data_pipeline.data_loader import (
     ENTSOEClient,
     EUETSLoader,
     GasPriceLoader,
+    _is_stale,
 )
 from src.data_pipeline.feature_engineer import engineer_features
 from src.utils.config import (
+    AFRR_CSV_PATH,
+    ANALYSIS_END,
     DATA_PROCESSED,
     DATA_RAW,
     ENTSOE_API_TOKEN,
@@ -88,7 +91,10 @@ def run_pipeline() -> pd.DataFrame:
     da_path = DATA_RAW / "da_prices.csv"
     ccgt_path = DATA_RAW / "ccgt_generation.csv"
 
-    if ENTSOE_API_TOKEN and (FORCE_REDOWNLOAD or not da_path.exists() or not ccgt_path.exists()):
+    da_stale = FORCE_REDOWNLOAD or not da_path.exists() or _is_stale(da_path, ANALYSIS_END)
+    ccgt_stale = FORCE_REDOWNLOAD or not ccgt_path.exists() or _is_stale(ccgt_path, ANALYSIS_END)
+
+    if ENTSOE_API_TOKEN and (da_stale or ccgt_stale):
         try:
             entsoe = ENTSOEClient()
             da_prices = entsoe.fetch_da_prices()
@@ -106,11 +112,13 @@ def run_pipeline() -> pd.DataFrame:
         da_prices = _load_or_error(da_path, "DA prices")
         ccgt_generation = _load_or_error(ccgt_path, "CCGT generation")
 
-    # --- aFRR prices (static CSV) ---
+    ccgt_generation = ENTSOEClient._patch_from_smard(ccgt_generation)
+
+    # --- aFRR prices (aggregate from raw bid-level CSV) ---
     affr_path = DATA_RAW / "affr_prices.csv"
-    if FORCE_REDOWNLOAD or not affr_path.exists():
+    if FORCE_REDOWNLOAD or not affr_path.exists() or _is_stale(affr_path, ANALYSIS_END):
         loader = AFRRBidPriceLoader()
-        affr_prices = loader.load()
+        affr_prices = loader.load(csv_path=AFRR_CSV_PATH)
     else:
         affr_prices = _load_or_error(affr_path, "aFRR prices")
 

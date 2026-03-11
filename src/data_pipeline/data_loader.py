@@ -46,6 +46,37 @@ def _cached(path: Path, force: bool = FORCE_REDOWNLOAD) -> bool:
     return exists and not force
 
 
+def _is_stale(path: Path, end: str | pd.Timestamp, tolerance_days: int = 1) -> bool:
+    """
+    Return True if the cached CSV does not cover up to `end`.
+
+    Reads the last index value from the file and compares it to `end` minus
+    `tolerance_days`.  Returns True (stale) on any read error so the caller
+    falls back to a fresh fetch.
+
+    Args:
+        path: CSV file with a DatetimeIndex as the first column.
+        end: Expected end of coverage (string or Timestamp).
+        tolerance_days: How many days short of `end` is still considered fresh.
+
+    Returns:
+        True if the file needs updating, False if it is sufficiently up-to-date.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return True
+    try:
+        idx = pd.read_csv(path, index_col=0, parse_dates=True).index
+        if idx.empty:
+            return True
+        last = idx[-1]
+        if getattr(last, "tz", None) is None:
+            last = last.tz_localize("UTC")
+        end_ts = pd.Timestamp(end, tz="UTC") if not isinstance(end, pd.Timestamp) else end
+        return last < end_ts - pd.Timedelta(days=tolerance_days)
+    except Exception:
+        return True
+
+
 # ---------------------------------------------------------------------------
 # 1. ENTSO-E client (DA prices + CCGT generation)
 # ---------------------------------------------------------------------------
@@ -85,6 +116,9 @@ class ENTSOEClient:
         """
         Fetch Day-Ahead electricity prices for DE-LU bidding zone.
 
+        If a cached file exists but doesn't cover the full analysis window,
+        only the missing tail is fetched and appended (incremental update).
+
         Args:
             out_path: Optional path to save the CSV. Defaults to data/raw/da_prices.csv.
 
@@ -94,18 +128,37 @@ class ENTSOEClient:
         out_path = out_path or (DATA_RAW / "da_prices.csv")
         DATA_RAW.mkdir(parents=True, exist_ok=True)
 
-        if _cached(out_path):
-            return pd.read_csv(out_path, index_col=0, parse_dates=True).squeeze()
+        existing: pd.Series | None = None
+        fetch_start = self._start
 
-        logger.info("Fetching DA prices for %s from ENTSO-E …", BIDDING_ZONE)
+        if not FORCE_REDOWNLOAD and out_path.exists() and out_path.stat().st_size > 0:
+            existing = pd.read_csv(out_path, index_col=0, parse_dates=True).squeeze()
+            if existing.index.tz is None:
+                existing.index = existing.index.tz_localize("UTC")
+            if not _is_stale(out_path, self._end):
+                logger.info("DA prices up-to-date, using cached file: %s", out_path.name)
+                return existing
+            # Incremental: only fetch the missing window
+            fetch_start = (existing.index[-1] + pd.Timedelta(hours=1)).normalize()
+            logger.info(
+                "DA prices cached to %s; fetching tail from %s …",
+                existing.index[-1].date(), fetch_start.date(),
+            )
+        else:
+            logger.info("Fetching DA prices for %s from ENTSO-E …", BIDDING_ZONE)
+
         series = self._client.query_day_ahead_prices(
             country_code=BIDDING_ZONE,
-            start=self._start,
+            start=fetch_start,
             end=self._end,
         )
         series = series.rename("da_price_eur_mwh")
         series.index = series.index.tz_convert("UTC")
         series = series.resample("h").mean()
+
+        if existing is not None and not existing.empty:
+            series = pd.concat([existing, series]).sort_index()
+            series = series[~series.index.duplicated(keep="last")]
 
         series.to_csv(out_path, header=True)
         logger.info("Saved DA prices: %d rows → %s", len(series), out_path)
@@ -114,6 +167,9 @@ class ENTSOEClient:
     def fetch_ccgt_generation(self, out_path: Path | None = None) -> pd.Series:
         """
         Fetch actual CCGT (Fossil Gas) generation for DE-LU.
+
+        If a cached file exists but doesn't cover the full analysis window,
+        only the missing tail is fetched and appended (incremental update).
 
         Args:
             out_path: Optional path to save the CSV.
@@ -124,13 +180,27 @@ class ENTSOEClient:
         out_path = out_path or (DATA_RAW / "ccgt_generation.csv")
         DATA_RAW.mkdir(parents=True, exist_ok=True)
 
-        if _cached(out_path):
-            return pd.read_csv(out_path, index_col=0, parse_dates=True).squeeze()
+        existing: pd.Series | None = None
+        fetch_start = self._start
 
-        logger.info("Fetching CCGT generation for %s from ENTSO-E …", BIDDING_ZONE)
+        if not FORCE_REDOWNLOAD and out_path.exists() and out_path.stat().st_size > 0:
+            existing = pd.read_csv(out_path, index_col=0, parse_dates=True).squeeze()
+            if existing.index.tz is None:
+                existing.index = existing.index.tz_localize("UTC")
+            if not _is_stale(out_path, self._end):
+                logger.info("CCGT generation up-to-date, using cached file: %s", out_path.name)
+                return existing
+            fetch_start = (existing.index[-1] + pd.Timedelta(hours=1)).normalize()
+            logger.info(
+                "CCGT generation cached to %s; fetching tail from %s …",
+                existing.index[-1].date(), fetch_start.date(),
+            )
+        else:
+            logger.info("Fetching CCGT generation for %s from ENTSO-E …", BIDDING_ZONE)
+
         df = self._client.query_generation(
             country_code=BIDDING_ZONE,
-            start=self._start,
+            start=fetch_start,
             end=self._end,
             psr_type=self.PSR_TYPE_GAS,
         )
@@ -147,9 +217,41 @@ class ENTSOEClient:
 
         series = series.rename("ccgt_generation_mw")
         series = series.resample("h").mean()
+        series = self._patch_from_smard(series)
+
+        if existing is not None and not existing.empty:
+            series = pd.concat([existing, series]).sort_index()
+            series = series[~series.index.duplicated(keep="last")]
 
         series.to_csv(out_path, header=True)
         logger.info("Saved CCGT generation: %d rows → %s", len(series), out_path)
+        return series
+
+    @staticmethod
+    def _patch_from_smard(series: pd.Series) -> pd.Series:
+        """Back-fill early-2020 CCGT NaNs from the SMARD supplement file.
+
+        Args:
+            series: CCGT generation series potentially containing NaNs in early 2020.
+
+        Returns:
+            Series with NaN positions filled where SMARD data is available.
+        """
+        smard_path = DATA_RAW / "ccgt_generation_2020_smard.csv"
+        if not smard_path.exists():
+            logger.debug("SMARD supplement not found at %s; skipping patch.", smard_path)
+            return series
+        smard = pd.read_csv(smard_path, index_col=0, parse_dates=True).squeeze()
+        smard.index = (
+            smard.index.tz_localize("UTC") if smard.index.tz is None else smard.index
+        )
+        smard.name = series.name
+        # Only fill NaN positions to avoid overwriting good ENTSO-E data
+        mask = series.isna() & series.index.isin(smard.index)
+        series.loc[mask] = smard.reindex(series.index[mask])
+        patched = int(mask.sum())
+        if patched:
+            logger.info("Patched %d CCGT NaNs from SMARD supplement.", patched)
         return series
 
 
@@ -346,7 +448,7 @@ class AFRRBidPriceLoader:
         out_path = out_path or (DATA_RAW / "affr_prices.csv")
         DATA_RAW.mkdir(parents=True, exist_ok=True)
 
-        if _cached(out_path):
+        if _cached(out_path) and not _is_stale(out_path, ANALYSIS_END):
             return pd.read_csv(out_path, index_col=0, parse_dates=True).squeeze()
 
         if not csv_path.exists():
@@ -476,6 +578,21 @@ class EUETSLoader:
         )
         series = prices.set_axis(timestamps).dropna().sort_index()
         series = series[~series.index.duplicated(keep="first")]
+
+        # Warn if data doesn't cover the full analysis window so forward-fill is obvious
+        last_year = int(series.index.max().year)
+        end_year = int(ANALYSIS_END[:4])
+        if last_year < end_year:
+            logger.warning(
+                "EU-ETS CSV only covers up to %d but analysis window runs to %d. "
+                "Forward-filling %d year(s) with %.2f €/tCO₂ (last available value). "
+                "Update data/raw/eu_ets_prices.csv with annual averages for %s to fix this.",
+                last_year,
+                end_year,
+                end_year - last_year,
+                float(series.iloc[-1]),
+                ", ".join(str(y) for y in range(last_year + 1, end_year + 1)),
+            )
 
         # Reindex to full hourly UTC index; ffill assigns each year's price to all hours
         hourly_index = pd.date_range(

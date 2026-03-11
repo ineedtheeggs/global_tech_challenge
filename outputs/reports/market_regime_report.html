@@ -37,7 +37,7 @@
 <body>
   <h1>aFRR-up Opportunity Cost: Market Regime Report</h1>
   <p style='color:#666;font-size:14px;'>
-    Gas peaker plant (CCGT) — DE-LU bidding zone, 2021 |
+    Gas peaker plant (CCGT) — DE-LU bidding zone, 2022–2023 |
     Model: <code>aFRR_Price = β₀ + β₁·CSS</code> (fitted per regime)
   </p>
 
@@ -60,7 +60,7 @@
         <th>p-value</th>
         <th>Sensitivity</th>
       </tr>
-      <tr><td class='regime-high'>High</td><td>Many plants online (>75th %ile CCGT gen) — abundant reserve supply</td><td><b>+0.5864</b> ↑</td><td>[0.5309, 0.6419]</td><td><0.001</td><td>Strong</td></tr><tr><td class='regime-medium'>Medium</td><td>Moderate generation (25–75th %ile CCGT gen) — balanced reserve supply</td><td><b>-0.2769</b> ↓</td><td>[-0.3598, -0.1940]</td><td><0.001</td><td>Strong</td></tr><tr><td class='regime-low'>Low</td><td>Few plants online (<25th %ile CCGT gen) — scarce reserve supply</td><td><b>-0.3140</b> ↓</td><td>[-0.3566, -0.2713]</td><td><0.001</td><td>Strong</td></tr>
+      <tr><td class='regime-high'>High</td><td>Many plants online (>75th %ile CCGT gen) — abundant reserve supply</td><td><b>+0.0626</b> ↑</td><td>[0.0560, 0.0691]</td><td><0.001</td><td>Weak</td></tr><tr><td class='regime-medium'>Medium</td><td>Moderate generation (25–75th %ile CCGT gen) — balanced reserve supply</td><td><b>+0.0387</b> ↑</td><td>[0.0345, 0.0428]</td><td><0.001</td><td>Weak</td></tr><tr><td class='regime-low'>Low</td><td>Few plants online (<25th %ile CCGT gen) — scarce reserve supply</td><td><b>-0.0080</b> ↓</td><td>[-0.0119, -0.0042]</td><td><0.001</td><td>Weak</td></tr>
     </table>
     <p style='font-size:13px;color:#555;'>
       A positive β₁ means higher CSS (more profitable spot sales) → higher aFRR bid prices.
@@ -79,17 +79,16 @@
         <th>Mean CSS (€/MWh)</th>
         <th>R²</th>
       </tr>
-      <tr><td class='regime-high'>High</td><td>2,004</td><td>11220 MW</td><td>40.00</td><td>9.92</td><td class='warn'>0.177</td></tr><tr><td class='regime-medium'>Medium</td><td>4,008</td><td>6293 MW</td><td>47.79</td><td>-13.03</td><td class='warn'>0.011</td></tr><tr><td class='regime-low'>Low</td><td>2,004</td><td>3292 MW</td><td>41.18</td><td>-55.35</td><td class='warn'>0.094</td></tr>
+      <tr><td class='regime-high'>High</td><td>4,362</td><td>14241 MW</td><td>20.15</td><td>25.12</td><td class='warn'>0.074</td></tr><tr><td class='regime-medium'>Medium</td><td>8,725</td><td>8274 MW</td><td>17.16</td><td>-1.44</td><td class='warn'>0.036</td></tr><tr><td class='regime-low'>Low</td><td>4,362</td><td>4591 MW</td><td>16.96</td><td>-52.98</td><td class='warn'>0.004</td></tr>
     </table>
     
   
     <h2>3. Model Reliability</h2>
-    <ul><li><b class='regime-high'>High</b>: R² = <span class='warn'>0.177</span> (N = 2,004)</li><li><b class='regime-medium'>Medium</b>: R² = <span class='warn'>0.011</span> (N = 4,008)</li><li><b class='regime-low'>Low</b>: R² = <span class='warn'>0.094</span> (N = 2,004)</li></ul>
+    <ul><li><b class='regime-high'>High</b>: R² = <span class='warn'>0.074</span> (N = 4,362)</li><li><b class='regime-medium'>Medium</b>: R² = <span class='warn'>0.036</span> (N = 8,725)</li><li><b class='regime-low'>Low</b>: R² = <span class='warn'>0.004</span> (N = 4,362)</li></ul>
     <div class='note'>
-      ℹ Training period: Jan–Nov 2021 (DE-LU, pre-BESS boom, post EU-ETS carbon pricing).
+      ℹ Training period: Jan 2022–Dec 2023 (DE-LU, post-energy crisis, BESS expansion period).
       R² values below 0.50 reflect high PTU-level noise in aFRR prices — the model captures
       the structural CSS relationship, not short-term intra-day volatility.
-      A longer multi-year training window would improve fit.
     </div>
     
 
@@ -100,25 +99,25 @@
     <h3>Regime: <span class='regime-high'>High</span></h3>
     <table class='scenario-table'>
       <tr><th>Gas / DA Price</th><th>DA = 50 €/MWh</th><th>DA = 80 €/MWh</th><th>DA = 120 €/MWh</th><th>DA = 160 €/MWh</th></tr>
-      <tr><td>Gas = 25 €/MWh_th</td><td>18.8</td><td>36.4</td><td>59.8</td><td>83.3</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>7.1</td><td>24.7</td><td>48.1</td><td>71.6</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>-4.7</td><td>12.9</td><td>36.4</td><td>59.8</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>-16.4</td><td>1.2</td><td>24.7</td><td>48.1</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>-28.1</td><td>-10.5</td><td>12.9</td><td>36.4</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>-39.9</td><td>-22.3</td><td>1.2</td><td>24.7</td></tr>
+      <tr><td>Gas = 25 €/MWh_th</td><td>12.7</td><td>13.6</td><td>14.8</td><td>16.1</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>12.1</td><td>13.0</td><td>14.2</td><td>15.5</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>11.5</td><td>12.4</td><td>13.6</td><td>14.8</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>10.9</td><td>11.8</td><td>13.0</td><td>14.2</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>10.3</td><td>11.2</td><td>12.4</td><td>13.6</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>9.7</td><td>10.6</td><td>11.8</td><td>13.0</td></tr>
     </table>
     
     <h3>Regime: <span class='regime-medium'>Medium</span></h3>
     <table class='scenario-table'>
       <tr><th>Gas / DA Price</th><th>DA = 50 €/MWh</th><th>DA = 80 €/MWh</th><th>DA = 120 €/MWh</th><th>DA = 160 €/MWh</th></tr>
-      <tr><td>Gas = 25 €/MWh_th</td><td>51.5</td><td>43.1</td><td>32.1</td><td>21.0</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>57.0</td><td>48.7</td><td>37.6</td><td>26.5</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>62.5</td><td>54.2</td><td>43.1</td><td>32.1</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>68.1</td><td>59.8</td><td>48.7</td><td>37.6</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>73.6</td><td>65.3</td><td>54.2</td><td>43.1</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>79.1</td><td>70.8</td><td>59.8</td><td>48.7</td></tr>
+      <tr><td>Gas = 25 €/MWh_th</td><td>11.9</td><td>13.0</td><td>14.6</td><td>16.1</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>11.1</td><td>12.3</td><td>13.8</td><td>15.4</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>10.3</td><td>11.5</td><td>13.0</td><td>14.6</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>9.6</td><td>10.7</td><td>12.3</td><td>13.8</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>8.8</td><td>9.9</td><td>11.5</td><td>13.0</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>8.0</td><td>9.2</td><td>10.7</td><td>12.3</td></tr>
     </table>
     
     <h3>Regime: <span class='regime-low'>Low</span></h3>
     <table class='scenario-table'>
       <tr><th>Gas / DA Price</th><th>DA = 50 €/MWh</th><th>DA = 80 €/MWh</th><th>DA = 120 €/MWh</th><th>DA = 160 €/MWh</th></tr>
-      <tr><td>Gas = 25 €/MWh_th</td><td>32.0</td><td>22.6</td><td>10.1</td><td>-2.5</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>38.3</td><td>28.9</td><td>16.4</td><td>3.8</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>44.6</td><td>35.2</td><td>22.6</td><td>10.1</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>50.9</td><td>41.5</td><td>28.9</td><td>16.4</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>57.2</td><td>47.7</td><td>35.2</td><td>22.6</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>63.4</td><td>54.0</td><td>41.5</td><td>28.9</td></tr>
+      <tr><td>Gas = 25 €/MWh_th</td><td>13.5</td><td>13.4</td><td>13.3</td><td>13.3</td></tr><tr><td>Gas = 35 €/MWh_th</td><td>13.5</td><td>13.4</td><td>13.4</td><td>13.3</td></tr><tr><td>Gas = 45 €/MWh_th</td><td>13.5</td><td>13.5</td><td>13.4</td><td>13.3</td></tr><tr><td>Gas = 55 €/MWh_th</td><td>13.6</td><td>13.5</td><td>13.4</td><td>13.4</td></tr><tr><td>Gas = 65 €/MWh_th</td><td>13.6</td><td>13.6</td><td>13.5</td><td>13.4</td></tr><tr><td>Gas = 75 €/MWh_th</td><td>13.7</td><td>13.6</td><td>13.5</td><td>13.4</td></tr>
     </table>
     
 
   <footer>
     Generated by <code>src/analysis/report_generator.py</code> &mdash;
-    aFRR Opportunity Cost Calculator &mdash; DE-LU 2021
+    aFRR Opportunity Cost Calculator &mdash; DE-LU 2022–2023
   </footer>
 </body>
 </html>

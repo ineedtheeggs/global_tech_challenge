@@ -89,8 +89,8 @@ def sample_df(sample_index: pd.DatetimeIndex) -> pd.DataFrame:
 class TestBuildHourlyIndex:
     def test_length(self) -> None:
         idx = build_hourly_index()
-        # 2021-01-01 → 2021-11-30 ≈ 8016 hours; check at least 7_000
-        assert len(idx) > 7_000
+        # 2022-01-01 → 2023-12-29 ≈ 17,520 hours; check at least 15_000
+        assert len(idx) > 15_000
 
     def test_utc_timezone(self) -> None:
         idx = build_hourly_index()
@@ -307,10 +307,10 @@ class TestAFRRBidPriceLoader:
             # date_from, date_to, type_of_reserves, product, capacity_price_[eur/mw],
             # energy_price_[eur/mwh], energy_price_payment_direction,
             # offered_capacity_[mw], allocated_capacity_[mw], country, note, capacity_price_[(eur/mw)/h]
-            "2021-01-15,2021-01-15,aFRR,POS_00_04,5.0,0.0,PROVIDER_TO_GRID,10,10,DE,,",
-            "2021-01-15,2021-01-15,aFRR,POS_00_04,8.0,0.0,PROVIDER_TO_GRID,20,20,DE,,",
-            "2021-01-15,2021-01-15,aFRR,POS_04_08,12.0,0.0,PROVIDER_TO_GRID,15,15,DE,,",
-            "2021-01-15,2021-01-15,aFRR,NEG_00_04,3.0,0.0,GRID_TO_PROVIDER,5,5,DE,,",
+            "2022-01-15,2022-01-15,aFRR,POS_00_04,5.0,0.0,PROVIDER_TO_GRID,10,10,DE,,",
+            "2022-01-15,2022-01-15,aFRR,POS_00_04,8.0,0.0,PROVIDER_TO_GRID,20,20,DE,,",
+            "2022-01-15,2022-01-15,aFRR,POS_04_08,12.0,0.0,PROVIDER_TO_GRID,15,15,DE,,",
+            "2022-01-15,2022-01-15,aFRR,NEG_00_04,3.0,0.0,GRID_TO_PROVIDER,5,5,DE,,",
         ]
         header = (
             "date_from,date_to,type_of_reserves,product,"
@@ -333,8 +333,8 @@ class TestAFRRBidPriceLoader:
         """POS_00_04 weighted avg = (5*10 + 8*20) / 30 = 7.0."""
         loader = AFRRBidPriceLoader()
         result = loader.load(csv_path=tmp_csv, out_path=tmp_path / "out.csv")
-        # 2021-01-15 00:00 UTC is the start of POS_00_04 block
-        ts = pd.Timestamp("2021-01-15 00:00", tz="UTC")
+        # 2022-01-15 00:00 UTC is the start of POS_00_04 block
+        ts = pd.Timestamp("2022-01-15 00:00", tz="UTC")
         expected = (5.0 * 10 + 8.0 * 20) / 30
         assert abs(result.loc[ts] - expected) < 1e-9
 

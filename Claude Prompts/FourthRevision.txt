@@ -1,0 +1,1569 @@
+ ▐▛███▜▌   Claude Code v2.1.72
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/GitRepos/global_tech_challenge
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Plan to implement                                                            │
+│                                                                              │
+│ Phase 3 Overhaul Plan                                                        │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ The current Phase 3 uses arbitrary gas/DA price ranges for "forecast curves" │
+│  (unanchored to real data).                                                  │
+│ The user wants: (1) the forecast to use actual 2026 March 1–8 PTU data from  │
+│ combined_dataset.csv,                                                        │
+│ comparing 6 year-model predictions vs actual aFRR prices; (2) CSS-vs-aFRR    │
+│ broken out per year (6 subplots);                                            │
+│ (3) historical aFRR time series kept; (4) regime distribution over time      │
+│ added.                                                                       │
+│ The regression models must first be re-run to cover all available years      │
+│ (2020–2025).                                                                 │
+│                                                                              │
+│ ---                                                                          │
+│ Step 0 – Pre-requisite: Re-run regime classifier + regression models         │
+│                                                                              │
+│ Run both so market_regimes.csv and the per-year pkl files cover all years    │
+│ with valid CSS data.                                                         │
+│ source venv/bin/activate                                                     │
+│ python src/models/regime_classifier.py    # regenerates market_regimes.csv   │
+│ (all years)                                                                  │
+│ python src/models/regression_models.py   # generates                         │
+│ regime_{regime}_{year}_model.pkl for all years                               │
+│                                                                              │
+│ ---                                                                          │
+│ Step 1 – Modify src/analysis/visualization.py                                │
+│                                                                              │
+│ Keep                                                                         │
+│                                                                              │
+│ - plot_historical_afrr(df) — unchanged; plots all historical data coloured   │
+│ by regime.                                                                   │
+│                                                                              │
+│ Replace plot_css_vs_affr                                                     │
+│                                                                              │
+│ New signature: plot_css_vs_affr(df, outputs_plots, outputs_models) — same    │
+│ API.                                                                         │
+│ - Detect years present in df.index.year.unique() (sorted, up to 6).          │
+│ - Create a 2×3 subplot grid (or 1×N if <3 years).                            │
+│ - Each subplot = one year: scatter points coloured by regime (REGIME_COLORS) │
+│  + one trend line per regime.                                                │
+│ - Title each subplot "Year XXXX (n=NNN)".                                    │
+│ - Saved as css_vs_affr_prices.png.                                           │
+│                                                                              │
+│ Replace plot_forecast_curves → plot_2026_forecast                            │
+│                                                                              │
+│ New function: plot_2026_forecast(df, outputs_plots, outputs_models,          │
+│ data_processed=DATA_PROCESSED).                                              │
+│ The extra data_processed kwarg makes it injectable for tests (parallel to    │
+│ outputs_models).                                                             │
+│ df is accepted but ignored (same pattern as old plot_forecast_curves).       │
+│                                                                              │
+│ Logic:                                                                       │
+│ 1. Load data_processed / "combined_dataset.csv".                             │
+│ 2. Filter to all 2026-03 PTUs available in the CSV (i.e. entire month        │
+│ through 2026-03-09, the analysis end date — not just March 1–8).             │
+│ 3. Assign regimes with assign_regimes(df_2026) from regime_classifier.py.    │
+│ 4. Drop rows where CSS or any price column is NaN.                           │
+│ 5. Discover available years from pkl files in outputs_models (glob           │
+│ regime_*_*_model.pkl, extract year).                                         │
+│ 6. For each row and each available year:                                     │
+│   - Call estimate_afrr_price(da_price, gas_price, eu_ets_price, regime,      │
+│ year=Y).                                                                     │
+│   - Store in a column forecast_{Y}.                                          │
+│ 7. Plot:                                                                     │
+│   - Actual aFRR price (black line, linewidth=2, label="Actual aFRR").        │
+│   - One line per year (distinct colours from a palette, label="Model {Y}").  │
+│   - X-axis = datetime, Y-axis = aFRR price (€/MW).                           │
+│   - Title: "2026 aFRR Forecast vs Actual (March, regime-matched)".           │
+│ 8. Save as forecast_curves.png.                                              │
+│                                                                              │
+│ Add plot_regime_distribution                                                 │
+│                                                                              │
+│ New function: plot_regime_distribution(df, outputs_plots, outputs_models).   │
+│                                                                              │
+│ Logic:                                                                       │
+│ 1. Group df by year, count PTUs per regime.                                  │
+│ 2. Produce a stacked bar chart: x=year, bars stacked by regime               │
+│ (high/medium/low).                                                           │
+│ 3. Show percentage labels inside bars.                                       │
+│ 4. Save as regime_distribution.png.                                          │
+│                                                                              │
+│ Update __main__ block                                                        │
+│                                                                              │
+│ Load combined_dataset.csv + assign regimes for the distribution and          │
+│ CSS-by-year plots.                                                           │
+│ Load a pre-combined df that has regime column (from market_regimes.csv) for  │
+│ historical plot.                                                             │
+│                                                                              │
+│ ---                                                                          │
+│ Step 2 – Modify src/analysis/dashboard.py                                    │
+│                                                                              │
+│ Replace Figure 3 (forecast curves) with a new Plotly figure for the 2026     │
+│ forecast:                                                                    │
+│ - Same data logic as plot_2026_forecast but as an interactive Plotly         │
+│ time-series.                                                                 │
+│                                                                              │
+│ Add Figure 4: regime distribution (Plotly stacked bar, same data as          │
+│ plot_regime_distribution).                                                   │
+│                                                                              │
+│ Update plot_css_vs_affr figure to use per-year subplots (make_subplots(2,    │
+│ 3)).                                                                         │
+│                                                                              │
+│ ---                                                                          │
+│ Step 3 – Update tests/test_analysis.py                                       │
+│                                                                              │
+│ Update existing tests                                                        │
+│                                                                              │
+│ - TestPlotCssVsAfrr: add year column to synthetic_df; assert PNG exists      │
+│ (unchanged contract).                                                        │
+│ - TestPlotForecastCurves → TestPlot2026Forecast:                             │
+│   - Rename test class and function references.                               │
+│   - Create a fake_combined_csv fixture: writes a temp combined_dataset.csv   │
+│ with ~8 rows of 2026-03-01→08 data including da_price, gas_price, ets_price, │
+│  ccgt_generation_mw, css, affr_price columns.                                │
+│   - Pass data_processed=fake_combined_csv.parent and                         │
+│ outputs_models=fake_model_dir directly (no monkeypatching needed thanks to   │
+│ injectable params).                                                          │
+│   - Assert forecast_curves.png exists and returns Path.                      │
+│                                                                              │
+│ New test class TestPlotRegimeDistribution                                    │
+│                                                                              │
+│ - Pass synthetic_df with multiple years in index.                            │
+│ - Assert regime_distribution.png exists.                                     │
+│                                                                              │
+│ Keep all other tests unchanged (historical aFRR, report, dashboard).         │
+│                                                                              │
+│ ---                                                                          │
+│ Critical Files                                                               │
+│                                                                              │
+│ ┌─────────────────────────────────┬────────────────────────────────────────┐ │
+│ │              File               │                 Change                 │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │                                 │ Replace plot_forecast_curves, overhaul │ │
+│ │ src/analysis/visualization.py   │  plot_css_vs_affr, add                 │ │
+│ │                                 │ plot_regime_distribution               │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │ src/analysis/dashboard.py       │ Update figures 2 & 3, add figure 4     │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │ tests/test_analysis.py          │ Update / add test classes for new plot │ │
+│ │                                 │  functions                             │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │ src/models/predictions.py       │ No change needed                       │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │ src/models/regression_models.py │ No change needed (just re-run)         │ │
+│ ├─────────────────────────────────┼────────────────────────────────────────┤ │
+│ │ src/models/regime_classifier.py │ No change needed (just re-run)         │ │
+│ └─────────────────────────────────┴────────────────────────────────────────┘ │
+│                                                                              │
+│ ---                                                                          │
+│ Verification                                                                 │
+│                                                                              │
+│ # Regenerate models (pre-req)                                                │
+│ source venv/bin/activate                                                     │
+│ python src/models/regime_classifier.py                                       │
+│ python src/models/regression_models.py                                       │
+│                                                                              │
+│ # Re-run Phase 3                                                             │
+│ python src/analysis/visualization.py                                         │
+│ python src/analysis/dashboard.py                                             │
+│ python src/analysis/report_generator.py                                      │
+│                                                                              │
+│ # Run tests                                                                  │
+│ venv/bin/pytest tests/test_analysis.py -v                                    │
+│ venv/bin/pytest tests/ -v   # full suite (89 tests + new ones)               │
+│                                                                              │
+│ Expected outputs:                                                            │
+│ - outputs/plots/historical_afrr_prices.png — unchanged                       │
+│ - outputs/plots/css_vs_affr_prices.png — 6 per-year subplots                 │
+│ - outputs/plots/forecast_curves.png — March 1-8 2026 actual vs model         │
+│ forecasts                                                                    │
+│ - outputs/plots/regime_distribution.png — stacked bar by year                │
+│ - outputs/reports/dashboard.html — 4 interactive charts                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+● Read 3 files (ctrl+o to expand)
+
+● Now let me read the other relevant files:
+
+● Read 2 files (ctrl+o to expand)
+
+● Let me also check the assign_regimes function signature:
+
+● Read 1 file (ctrl+o to expand)
+
+● Let me check the report generator too:
+
+● Read 1 file (ctrl+o to expand)
+
+● Now I have a complete picture. Let me implement all changes. I'll start with
+  Step 0 (re-running models) in the background while implementing the code
+  changes:
+
+● Bash(source venv/bin/activate && python src/models/regime_classifier.py 2>&1 |
+       tail -5)
+  ⎿  Running in the background (↓ to manage)
+
+● Now let me write the new visualization.py:
+
+● Write(src/analysis/visualization.py)
+  ⎿  Added 251 lines, removed 79 lines
+       1  """                                                            
+       2  Static visualization module for aFRR opportunity cost          
+          analysis.                                                      
+       3                                                                 
+       4 -Generates 3 PNG plots:                                         
+       4 +Generates 4 PNG plots:                                         
+       5  1. Historical aFRR-up capacity prices over time (coloured by   
+          regime)                                                        
+       6 -2. CSS vs aFRR scatter by regime (model evidence)              
+       7 -3. Forecast curves — aFRR price vs gas forward price,          
+         -parametrised by DA scenario                                    
+       6 +2. CSS vs aFRR scatter by year (2×3 subplot grid)              
+       7 +3. 2026 forecast vs actual aFRR prices (March, regime-matched) 
+       8 +4. Regime distribution over time (stacked bar by year)         
+       9                                                                 
+      10  Usage:                                                         
+      11      python src/analysis/visualization.py                       
+     ...
+      24                                                                 
+      25  sys.path.insert(0, str(Path(__file__).parents[2]))             
+      26                                                                 
+      27 -from src.models.predictions import estimate_afrr_price         
+      27  from src.utils.config import (                                 
+      28      DATA_PROCESSED,                                            
+      29 -    FORECAST_DA_SCENARIOS,                                     
+      30 -    FORECAST_ETS_PRICE,                                        
+      31 -    FORECAST_GAS_MAX,                                          
+      32 -    FORECAST_GAS_MIN,                                          
+      33 -    FORECAST_GAS_STEPS,                                        
+      29      OUTPUTS_MODELS,                                            
+      30      OUTPUTS_PLOTS,                                             
+      31  )                                                              
+     ...
+      45      "low": "#F44336",                                          
+      46  }                                                              
+      47  REGIME_ORDER: list[str] = ["high", "medium", "low"]            
+      48 -DA_SCENARIO_COLORS: list[str] = ["#1E88E5", "#43A047",         
+         -"#FB8C00", "#E53935"]                                          
+      48                                                                 
+      49                                                                 
+      50  # ------------------------------------------------------------ 
+          ---------------                                                
+     ...
+      101                                                                
+      102                                                                
+      103  # ----------------------------------------------------------- 
+           ----------------                                              
+      104 -# Plot 2: CSS vs aFRR prices                                  
+      104 +# Plot 2: CSS vs aFRR prices — per-year subplots              
+      105  # ----------------------------------------------------------- 
+           ----------------                                              
+      106                                                                
+      107  def plot_css_vs_affr(                                         
+     ...
+      109      outputs_plots: Path = OUTPUTS_PLOTS,                      
+      110      outputs_models: Path = OUTPUTS_MODELS,                    
+      111  ) -> Path:                                                    
+      112 -    """Scatter plot of CSS vs aFRR prices, coloured and       
+          -trend-lined per regime.                                       
+      112 +    """Scatter plot of CSS vs aFRR prices, one subplot per    
+          +year, coloured by regime.                                     
+      113                                                                
+      114      Args:                                                     
+      115 -        df: DataFrame with 'css', 'affr_price_eur_mw',        
+          -'regime' columns.                                             
+      115 +        df: DataFrame with 'css', 'affr_price_eur_mw',        
+          +'regime' columns and DatetimeIndex.                           
+      116          outputs_plots: Directory to save PNG into.            
+      117          outputs_models: Not used; included for consistent     
+           API.                                                          
+      118                                                                
+     ...
+      122      outputs_plots.mkdir(parents=True, exist_ok=True)          
+      123      out_path = outputs_plots / "css_vs_affr_prices.png"       
+      124                                                                
+      125 +    years = sorted(df.index.year.unique())                    
+      126 +    n_years = len(years)                                      
+      127 +    ncols = min(3, n_years)                                   
+      128 +    nrows = (n_years + ncols - 1) // ncols                    
+      129 +                                                              
+      130      y_col = "affr_price_eur_mw"                               
+      131      y_clip = df[y_col].quantile(0.99)                         
+      132 -    clipped_count = (df[y_col] > y_clip).sum()                
+      132                                                                
+      133 -    fig, ax = plt.subplots(figsize=(10, 6))                   
+      133 +    fig, axes = plt.subplots(nrows, ncols, figsize=(5 *       
+          +ncols, 4 * nrows), squeeze=False)                             
+      134                                                                
+      135 -    for regime in REGIME_ORDER:                               
+      136 -        sub = df[df["regime"] == regime]                      
+      137 -        ax.scatter(                                           
+      138 -            sub["css"],                                       
+      139 -            sub[y_col].clip(upper=y_clip),                    
+      140 -            color=REGIME_COLORS[regime],                      
+      141 -            alpha=0.4,                                        
+      142 -            s=10,                                             
+      143 -            label=f"{regime.capitalize()} regime              
+          -(n={len(sub):,})",                                            
+      144 -            rasterized=True,                                  
+      145 -        )                                                     
+      146 -        if len(sub) > 1:                                      
+      147 -            coeffs = np.polyfit(sub["css"],                   
+          -sub[y_col].clip(upper=y_clip), 1)                             
+      148 -            x_range = np.linspace(sub["css"].min(),           
+          -sub["css"].max(), 200)                                        
+      149 -            ax.plot(x_range, np.polyval(coeffs, x_range),     
+          -color=REGIME_COLORS[regime], linewidth=2)                     
+      135 +    for i, year in enumerate(years):                          
+      136 +        row_idx, col_idx = divmod(i, ncols)                   
+      137 +        ax = axes[row_idx][col_idx]                           
+      138 +        year_df = df[df.index.year == year]                   
+      139                                                                
+      140 -    if clipped_count:                                         
+      141 -        ax.annotate(                                          
+      142 -            f"{clipped_count} pts clipped at 99th pctile      
+          -({y_clip:.0f} €/MW)",                                         
+      143 -            xy=(0.01, 0.97),                                  
+      144 -            xycoords="axes fraction",                         
+      145 -            va="top",                                         
+      146 -            fontsize=8,                                       
+      147 -            color="gray",                                     
+      148 -        )                                                     
+      140 +        for regime in REGIME_ORDER:                           
+      141 +            sub = year_df[year_df["regime"] == regime]        
+      142 +            ax.scatter(                                       
+      143 +                sub["css"],                                   
+      144 +                sub[y_col].clip(upper=y_clip),                
+      145 +                color=REGIME_COLORS[regime],                  
+      146 +                alpha=0.4,                                    
+      147 +                s=8,                                          
+      148 +                label=f"{regime.capitalize()}                 
+          +(n={len(sub):,})",                                            
+      149 +                rasterized=True,                              
+      150 +            )                                                 
+      151 +            if len(sub) > 1:                                  
+      152 +                coeffs = np.polyfit(sub["css"],               
+          +sub[y_col].clip(upper=y_clip), 1)                             
+      153 +                x_range = np.linspace(sub["css"].min(),       
+          +sub["css"].max(), 200)                                        
+      154 +                ax.plot(                                      
+      155 +                    x_range,                                  
+      156 +                    np.polyval(coeffs, x_range),              
+      157 +                    color=REGIME_COLORS[regime],              
+      158 +                    linewidth=1.5,                            
+      159 +                )                                             
+      160                                                                
+      161 -    ax.set_xlabel("Clean Spark Spread (€/MWh)", fontsize=11)  
+      162 -    ax.set_ylabel("aFRR-up Price (€/MW)", fontsize=11)        
+      163 -    ax.set_title("CSS vs aFRR-up Prices by Market Regime",    
+          -fontsize=13)                                                  
+      164 -    ax.legend(fontsize=9)                                     
+      165 -    ax.grid(True, alpha=0.3)                                  
+      161 +        ax.set_title(f"Year {year} (n={len(year_df):,})",     
+          +fontsize=10)                                                  
+      162 +        ax.set_xlabel("CSS (€/MWh)", fontsize=9)              
+      163 +        ax.grid(True, alpha=0.3)                              
+      164 +        ax.legend(fontsize=7)                                 
+      165 +                                                              
+      166 +    # Hide unused subplot cells                               
+      167 +    for j in range(n_years, nrows * ncols):                   
+      168 +        row_idx, col_idx = divmod(j, ncols)                   
+      169 +        axes[row_idx][col_idx].set_visible(False)             
+      170 +                                                              
+      171 +    axes[0][0].set_ylabel("aFRR-up Price (€/MW)", fontsize=9) 
+      172 +    fig.suptitle("CSS vs aFRR-up Prices by Year and Market    
+          +Regime", fontsize=13)                                         
+      173      fig.tight_layout()                                        
+      174      fig.savefig(out_path, dpi=150)                            
+      175      plt.close(fig)                                            
+     ...
+      167                                                                
+      168                                                                
+      169  # ----------------------------------------------------------- 
+           ----------------                                              
+      170 -# Plot 3: Forecast curves                                     
+      170 +# Plot 3: 2026 forecast vs actual aFRR                        
+      171  # ----------------------------------------------------------- 
+           ----------------                                              
+      172                                                                
+      173 -def plot_forecast_curves(                                     
+      173 +def plot_2026_forecast(                                       
+      174      df: pd.DataFrame,                                         
+      175      outputs_plots: Path = OUTPUTS_PLOTS,                      
+      176      outputs_models: Path = OUTPUTS_MODELS,                    
+      177 +    data_processed: Path = DATA_PROCESSED,                    
+      178  ) -> Path:                                                    
+      179 -    """aFRR opportunity cost vs gas forward price,            
+          -parametrised by DA price scenario.                            
+      179 +    """Actual vs model-forecast aFRR prices for 2026-03 PTUs. 
+      180                                                                
+      181 -    Three subplots (one per regime). X-axis = gas forward     
+          -price; each line                                              
+      182 -    represents a different DA price scenario. ETS price is    
+          -fixed.                                                        
+      181 +    Loads the combined_dataset.csv, filters to 2026-03,       
+          +assigns regimes,                                              
+      182 +    then applies each available year's OLS model to generate  
+          +forecasts.                                                    
+      183                                                                
+      184      Args:                                                     
+      185 -        df: Not directly used; included for consistent API.   
+      185 +        df: Accepted for API consistency; not used (data      
+          +loaded from CSV).                                             
+      186          outputs_plots: Directory to save PNG into.            
+      187 -        outputs_models: Not used; estimate_afrr_price uses    
+          -OUTPUTS_MODELS from config.                                   
+      187 +        outputs_models: Directory containing per-year pkl     
+          +files; used for                                               
+      188 +            model discovery and loading (injectable for       
+          +tests).                                                       
+      189 +        data_processed: Directory containing                  
+          +combined_dataset.csv (injectable                              
+      190 +            for tests).                                       
+      191                                                                
+      192      Returns:                                                  
+      193          Path to saved PNG file.                               
+      194      """                                                       
+      195 +    import pickle                                             
+      196 +    from src.models.regime_classifier import assign_regimes   
+      197 +    from src.utils.config import CARBON_INTENSITY, EFFICIENCY 
+      198 +                                                              
+      199      outputs_plots.mkdir(parents=True, exist_ok=True)          
+      200      out_path = outputs_plots / "forecast_curves.png"          
+      201                                                                
+      202 -    gas_range = np.linspace(FORECAST_GAS_MIN,                 
+          -FORECAST_GAS_MAX, FORECAST_GAS_STEPS)                         
+      202 +    # Load 2026-03 data                                       
+      203 +    combined_csv = data_processed / "combined_dataset.csv"    
+      204 +    df_all = pd.read_csv(combined_csv, index_col=0,           
+          +parse_dates=True)                                             
+      205 +    if df_all.index.tz is None:                               
+      206 +        df_all.index = df_all.index.tz_localize("UTC")        
+      207                                                                
+      208 -    fig, axes = plt.subplots(1, 3, figsize=(15, 5),           
+          -sharey=True)                                                  
+      208 +    df_2026 = df_all[                                         
+      209 +        (df_all.index.year == 2026) & (df_all.index.month ==  
+          +3)                                                            
+      210 +    ].copy()                                                  
+      211                                                                
+      212 -    for ax, regime in zip(axes, REGIME_ORDER):                
+      213 -        for i, da_price in enumerate(FORECAST_DA_SCENARIOS):  
+      214 -            prices = [                                        
+      215 -                estimate_afrr_price(                          
+      216 -                    da_price=da_price,                        
+      217 -                    gas_price=float(gas),                     
+      218 -                    eu_ets_price=FORECAST_ETS_PRICE,          
+      219 -                    regime=regime,                            
+      212 +    if df_2026.empty:                                         
+      213 +        logger.warning("No 2026-03 rows found in              
+          +combined_dataset.csv — skipping forecast plot.")              
+      214 +        fig, ax = plt.subplots(figsize=(12, 5))               
+      215 +        ax.text(0.5, 0.5, "No 2026-03 data available",        
+          +ha="center", va="center", transform=ax.transAxes)             
+      216 +        fig.savefig(out_path, dpi=150)                        
+      217 +        plt.close(fig)                                        
+      218 +        return out_path                                       
+      219 +                                                              
+      220 +    # Assign regimes (needs ccgt_generation_mw)               
+      221 +    df_2026 = assign_regimes(df_2026)                         
+      222 +                                                              
+      223 +    # Drop rows with missing price columns                    
+      224 +    required = ["da_price_eur_mwh", "gas_price_eur_mwh",      
+          +"eu_ets_price_eur_t",                                         
+      225 +                "affr_price_eur_mw", "css"]                   
+      226 +    df_2026 = df_2026.dropna(subset=required)                 
+      227 +                                                              
+      228 +    if df_2026.empty:                                         
+      229 +        logger.warning("All 2026-03 rows dropped after NaN    
+          +filter — skipping forecast plot.")                            
+      230 +        fig, ax = plt.subplots(figsize=(12, 5))               
+      231 +        ax.text(0.5, 0.5, "No valid 2026-03 data after NaN    
+          +filter", ha="center", va="center",                            
+      232 +                transform=ax.transAxes)                       
+      233 +        fig.savefig(out_path, dpi=150)                        
+      234 +        plt.close(fig)                                        
+      235 +        return out_path                                       
+      236 +                                                              
+      237 +    # Discover available years from pkl files                 
+      238 +    pkl_files =                                               
+          +list(outputs_models.glob("regime_*_*_model.pkl"))             
+      239 +    available_years: list[int] = []                           
+      240 +    for p in pkl_files:                                       
+      241 +        parts = p.stem.split("_")  # e.g. ['regime', 'high',  
+          +'2022', 'model']                                              
+      242 +        if len(parts) == 4 and parts[3] == "model" and        
+          +parts[1] in ("high", "medium", "low"):                        
+      243 +            try:                                              
+      244 +                available_years.append(int(parts[2]))         
+      245 +            except ValueError:                                
+      246 +                pass                                          
+      247 +    available_years = sorted(set(available_years))            
+      248 +                                                              
+      249 +    if not available_years:                                   
+      250 +        logger.warning("No year-specific pkl files found in   
+          +%s", outputs_models)                                          
+      251 +        return out_path                                       
+      252 +                                                              
+      253 +    # Helper: predict using models from outputs_models        
+          +(bypass global OUTPUTS_MODELS)                                
+      254 +    def _predict_row(da_price, gas_price, ets_price, regime,  
+          +year):                                                        
+      255 +        carbon_cost = ets_price * CARBON_INTENSITY /          
+          +EFFICIENCY                                                    
+      256 +        css = da_price - (gas_price / EFFICIENCY) -           
+          +carbon_cost                                                   
+      257 +        model_path = outputs_models /                         
+          +f"regime_{regime}_{year}_model.pkl"                           
+      258 +        with open(model_path, "rb") as fh:                    
+      259 +            model = pickle.load(fh)                           
+      260 +        fv = pd.DataFrame([[1.0, css]], columns=["const",     
+          +"css"])                                                       
+      261 +        return float(model.predict(fv)[0])                    
+      262 +                                                              
+      263 +    # Build forecast columns for each available year          
+      264 +    year_colors = plt.cm.tab10(np.linspace(0, 0.9,            
+          +len(available_years)))                                        
+      265 +                                                              
+      266 +    for year in available_years:                              
+      267 +        col = f"forecast_{year}"                              
+      268 +        preds = []                                            
+      269 +        for _, row in df_2026.iterrows():                     
+      270 +            try:                                              
+      271 +                p = _predict_row(                             
+      272 +                    row["da_price_eur_mwh"],                  
+      273 +                    row["gas_price_eur_mwh"],                 
+      274 +                    row["eu_ets_price_eur_t"],                
+      275 +                    row["regime"],                            
+      276 +                    year,                                     
+      277                  )                                             
+      278 -                for gas in gas_range                          
+      279 -            ]                                                 
+      278 +            except (FileNotFoundError, Exception):            
+      279 +                p = np.nan                                    
+      280 +            preds.append(p)                                   
+      281 +        df_2026[col] = preds                                  
+      282 +                                                              
+      283 +    # Plot                                                    
+      284 +    idx = df_2026.index                                       
+      285 +    if hasattr(idx, "tz") and idx.tz is not None:             
+      286 +        idx = idx.tz_localize(None)                           
+      287 +                                                              
+      288 +    fig, ax = plt.subplots(figsize=(14, 6))                   
+      289 +                                                              
+      290 +    ax.plot(                                                  
+      291 +        idx,                                                  
+      292 +        df_2026["affr_price_eur_mw"],                         
+      293 +        color="black",                                        
+      294 +        linewidth=2,                                          
+      295 +        label="Actual aFRR",                                  
+      296 +        zorder=10,                                            
+      297 +    )                                                         
+      298 +                                                              
+      299 +    for i, year in enumerate(available_years):                
+      300 +        col = f"forecast_{year}"                              
+      301 +        if col in df_2026.columns and                         
+          +df_2026[col].notna().any():                                   
+      302              ax.plot(                                          
+      303 -                gas_range,                                    
+      304 -                prices,                                       
+      305 -                color=DA_SCENARIO_COLORS[i %                  
+          -len(DA_SCENARIO_COLORS)],                                     
+      306 -                linewidth=2,                                  
+      307 -                label=f"DA = {da_price:.0f} €/MWh",           
+      303 +                idx,                                          
+      304 +                df_2026[col],                                 
+      305 +                color=year_colors[i],                         
+      306 +                linewidth=1.5,                                
+      307 +                alpha=0.8,                                    
+      308 +                label=f"Model {year}",                        
+      309              )                                                 
+      310                                                                
+      311 -        ax.set_title(f"{regime.capitalize()} Regime",         
+          -fontsize=11)                                                  
+      312 -        ax.set_xlabel("Gas Forward Price (€/MWh_th)",         
+          -fontsize=10)                                                  
+      313 -        ax.grid(True, alpha=0.3)                              
+      314 -        ax.legend(fontsize=8)                                 
+      311 +    ax.set_xlabel("Date", fontsize=11)                        
+      312 +    ax.set_ylabel("aFRR-up Price (€/MW)", fontsize=11)        
+      313 +    ax.set_title("2026 aFRR Forecast vs Actual (March,        
+          +regime-matched)", fontsize=13)                                
+      314 +    ax.legend(fontsize=9, ncol=4)                             
+      315 +    ax.grid(True, alpha=0.3)                                  
+      316 +    fig.tight_layout()                                        
+      317 +    fig.savefig(out_path, dpi=150)                            
+      318 +    plt.close(fig)                                            
+      319 +    logger.info("Saved: %s", out_path)                        
+      320 +    return out_path                                           
+      321                                                                
+      322 -    axes[0].set_ylabel("Estimated aFRR-up Price (€/MW)",      
+          -fontsize=10)                                                  
+      323 -    fig.suptitle(                                             
+      324 -        f"aFRR-up Opportunity Cost vs Gas Forward Price  (ETS 
+          - = {FORECAST_ETS_PRICE:.0f} €/tCO₂)",                         
+      325 -        fontsize=13,                                          
+      326 -    )                                                         
+      322 +                                                              
+      323 +# ----------------------------------------------------------- 
+          +----------------                                              
+      324 +# Plot 4: Regime distribution over time                       
+      325 +# ----------------------------------------------------------- 
+          +----------------                                              
+      326 +                                                              
+      327 +def plot_regime_distribution(                                 
+      328 +    df: pd.DataFrame,                                         
+      329 +    outputs_plots: Path = OUTPUTS_PLOTS,                      
+      330 +    outputs_models: Path = OUTPUTS_MODELS,                    
+      331 +) -> Path:                                                    
+      332 +    """Stacked bar chart showing regime distribution          
+          +(High/Medium/Low) per year.                                   
+      333 +                                                              
+      334 +    Args:                                                     
+      335 +        df: DataFrame with 'regime' column and DatetimeIndex. 
+      336 +        outputs_plots: Directory to save PNG into.            
+      337 +        outputs_models: Not used; included for consistent     
+          +API.                                                          
+      338 +                                                              
+      339 +    Returns:                                                  
+      340 +        Path to saved PNG file.                               
+      341 +    """                                                       
+      342 +    outputs_plots.mkdir(parents=True, exist_ok=True)          
+      343 +    out_path = outputs_plots / "regime_distribution.png"      
+      344 +                                                              
+      345 +    df = df.copy()                                            
+      346 +    df["year"] = df.index.year                                
+      347 +    pivot = df.groupby(["year",                               
+          +"regime"]).size().unstack(fill_value=0)                       
+      348 +                                                              
+      349 +    # Ensure all regimes present as columns                   
+      350 +    for r in REGIME_ORDER:                                    
+      351 +        if r not in pivot.columns:                            
+      352 +            pivot[r] = 0                                      
+      353 +    pivot = pivot[REGIME_ORDER]                               
+      354 +                                                              
+      355 +    totals = pivot.sum(axis=1)                                
+      356 +    pivot_pct = pivot.div(totals, axis=0) * 100               
+      357 +                                                              
+      358 +    fig, ax = plt.subplots(figsize=(10, 5))                   
+      359 +    bottom = np.zeros(len(pivot))                             
+      360 +    years = pivot.index.tolist()                              
+      361 +                                                              
+      362 +    for regime in REGIME_ORDER:                               
+      363 +        heights = pivot_pct[regime].values                    
+      364 +        bars = ax.bar(                                        
+      365 +            years,                                            
+      366 +            heights,                                          
+      367 +            bottom=bottom,                                    
+      368 +            color=REGIME_COLORS[regime],                      
+      369 +            label=f"{regime.capitalize()} regime",            
+      370 +        )                                                     
+      371 +        for bar, h, b in zip(bars, heights, bottom):          
+      372 +            if h >= 5:  # Only label if slice is ≥5%          
+      373 +                ax.text(                                      
+      374 +                    bar.get_x() + bar.get_width() / 2,        
+      375 +                    b + h / 2,                                
+      376 +                    f"{h:.0f}%",                              
+      377 +                    ha="center",                              
+      378 +                    va="center",                              
+      379 +                    fontsize=8,                               
+      380 +                    color="white",                            
+      381 +                    fontweight="bold",                        
+      382 +                )                                             
+      383 +        bottom += heights                                     
+      384 +                                                              
+      385 +    ax.set_xlabel("Year", fontsize=11)                        
+      386 +    ax.set_ylabel("Share of PTUs (%)", fontsize=11)           
+      387 +    ax.set_title("Market Regime Distribution by Year",        
+          +fontsize=13)                                                  
+      388 +    ax.set_xticks(years)                                      
+      389 +    ax.set_xticklabels([str(y) for y in years])               
+      390 +    ax.set_ylim(0, 105)                                       
+      391 +    ax.legend(fontsize=9)                                     
+      392 +    ax.grid(True, axis="y", alpha=0.3)                        
+      393      fig.tight_layout()                                        
+      394      fig.savefig(out_path, dpi=150)                            
+      395      plt.close(fig)                                            
+     ...
+      246                                                                
+      247      plot_historical_afrr(df_main)                             
+      248      plot_css_vs_affr(df_main)                                 
+      249 -    plot_forecast_curves(df_main)                             
+      249 +    plot_2026_forecast(df_main)                               
+      250 +    plot_regime_distribution(df_main)                         
+      251                                                                
+      252 -    logger.info("All 3 plots saved to %s", OUTPUTS_PLOTS)     
+      252 +    logger.info("All 4 plots saved to %s", OUTPUTS_PLOTS)     
+
+● Now update dashboard.py:
+
+● Write(src/analysis/dashboard.py)
+  ⎿  Added 200 lines, removed 71 lines
+       1  """                                                            
+       2  Interactive Plotly dashboard for aFRR opportunity cost         
+          analysis.                                                      
+       3                                                                 
+       4 -Produces a self-contained HTML file with 3 interactive charts: 
+       4 +Produces a self-contained HTML file with 4 interactive charts: 
+       5  1. Historical aFRR-up capacity prices over time (coloured by   
+          regime)                                                        
+       6 -2. CSS vs aFRR scatter by regime (model evidence)              
+       7 -3. Forecast: aFRR price vs gas forward price, parametrised by  
+         -DA scenario                                                    
+       6 +2. CSS vs aFRR scatter by year (per-year subplots)             
+       7 +3. 2026 forecast vs actual aFRR prices (March, regime-matched) 
+       8 +4. Regime distribution by year (stacked bar)                   
+       9                                                                 
+      10  Usage:                                                         
+      11      python src/analysis/dashboard.py                           
+     ...
+      12                                                                 
+      13  from __future__ import annotations                             
+      14                                                                 
+      15 +import pickle                                                  
+      16  import sys                                                     
+      17  from pathlib import Path                                       
+      18                                                                 
+     ...
+      23                                                                 
+      24  sys.path.insert(0, str(Path(__file__).parents[2]))             
+      25                                                                 
+      26 -from src.models.predictions import estimate_afrr_price         
+      26  from src.utils.config import (                                 
+      27 +    CARBON_INTENSITY,                                          
+      28      DATA_PROCESSED,                                            
+      29 -    FORECAST_DA_SCENARIOS,                                     
+      30 -    FORECAST_ETS_PRICE,                                        
+      31 -    FORECAST_GAS_MAX,                                          
+      32 -    FORECAST_GAS_MIN,                                          
+      33 -    FORECAST_GAS_STEPS,                                        
+      29 +    EFFICIENCY,                                                
+      30      OUTPUTS_MODELS,                                            
+      31      OUTPUTS_REPORTS,                                           
+      32  )                                                              
+     ...
+      44      "medium": "#FF9800",                                       
+      45      "low": "#F44336",                                          
+      46  }                                                              
+      47 -DA_SCENARIO_COLORS: list[str] = ["#1E88E5", "#43A047",         
+         -"#FB8C00", "#E53935"]                                          
+      47  PLOTLY_CDN = "https://cdn.plot.ly/plotly-latest.min.js"        
+      48                                                                 
+      49                                                                 
+     ...
+       88                                                                
+       89                                                                
+       90  # ----------------------------------------------------------- 
+           ----------------                                              
+       91 -# Figure 2: CSS vs aFRR scatter                               
+       91 +# Figure 2: CSS vs aFRR scatter — per-year subplots           
+       92  # ----------------------------------------------------------- 
+           ----------------                                              
+       93                                                                
+       94  def _fig_css_vs_affr(df: pd.DataFrame) -> go.Figure:          
+       95 +    years = sorted(df.index.year.unique())                    
+       96 +    n_years = len(years)                                      
+       97 +    ncols = min(3, n_years)                                   
+       98 +    nrows = (n_years + ncols - 1) // ncols                    
+       99 +                                                              
+      100      y_col = "affr_price_eur_mw"                               
+      101      y_clip = df[y_col].quantile(0.99)                         
+      102                                                                
+      103 +    subplot_titles = [f"Year {y}" for y in years]             
+      104 +    # Pad to fill grid                                        
+      105 +    while len(subplot_titles) < nrows * ncols:                
+      106 +        subplot_titles.append("")                             
+      107 +                                                              
+      108 +    fig = make_subplots(                                      
+      109 +        rows=nrows,                                           
+      110 +        cols=ncols,                                           
+      111 +        subplot_titles=subplot_titles,                        
+      112 +        shared_yaxes=False,                                   
+      113 +    )                                                         
+      114 +                                                              
+      115 +    shown_regimes: set[str] = set()                           
+      116 +                                                              
+      117 +    for i, year in enumerate(years):                          
+      118 +        row_idx = i // ncols + 1                              
+      119 +        col_idx = i % ncols + 1                               
+      120 +        year_df = df[df.index.year == year]                   
+      121 +                                                              
+      122 +        for regime in REGIME_ORDER:                           
+      123 +            sub = year_df[year_df["regime"] == regime]        
+      124 +            y_clipped = sub[y_col].clip(upper=y_clip)         
+      125 +            show_legend = regime not in shown_regimes         
+      126 +            fig.add_trace(go.Scatter(                         
+      127 +                x=sub["css"],                                 
+      128 +                y=y_clipped,                                  
+      129 +                mode="markers",                               
+      130 +                name=f"{regime.capitalize()}",                
+      131 +                legendgroup=regime,                           
+      132 +                marker=dict(color=REGIME_COLORS[regime],      
+          +size=4, opacity=0.4),                                         
+      133 +                showlegend=show_legend,                       
+      134 +            ), row=row_idx, col=col_idx)                      
+      135 +            if show_legend:                                   
+      136 +                shown_regimes.add(regime)                     
+      137 +                                                              
+      138 +            if len(sub) > 1:                                  
+      139 +                coeffs = np.polyfit(sub["css"], y_clipped, 1) 
+      140 +                x_range = np.linspace(sub["css"].min(),       
+          +sub["css"].max(), 200)                                        
+      141 +                fig.add_trace(go.Scatter(                     
+      142 +                    x=x_range,                                
+      143 +                    y=np.polyval(coeffs, x_range),            
+      144 +                    mode="lines",                             
+      145 +                    name=f"{regime.capitalize()} trend",      
+      146 +                    legendgroup=regime,                       
+      147 +                    line=dict(color=REGIME_COLORS[regime],    
+          +width=1.5),                                                   
+      148 +                    showlegend=False,                         
+      149 +                ), row=row_idx, col=col_idx)                  
+      150 +                                                              
+      151 +    fig.update_layout(                                        
+      152 +        title="CSS vs aFRR-up Prices by Year and Market       
+          +Regime",                                                      
+      153 +        height=400 * nrows,                                   
+      154 +        legend=dict(orientation="h", y=-0.08),                
+      155 +    )                                                         
+      156 +    return fig                                                
+      157 +                                                              
+      158 +                                                              
+      159 +# ----------------------------------------------------------- 
+          +----------------                                              
+      160 +# Figure 3: 2026 forecast vs actual                           
+      161 +# ----------------------------------------------------------- 
+          +----------------                                              
+      162 +                                                              
+      163 +def _fig_2026_forecast(                                       
+      164 +    data_processed: Path = DATA_PROCESSED,                    
+      165 +    outputs_models: Path = OUTPUTS_MODELS,                    
+      166 +) -> go.Figure:                                               
+      167 +    from src.models.regime_classifier import assign_regimes   
+      168 +                                                              
+      169 +    combined_csv = data_processed / "combined_dataset.csv"    
+      170 +    df_all = pd.read_csv(combined_csv, index_col=0,           
+          +parse_dates=True)                                             
+      171 +    if df_all.index.tz is None:                               
+      172 +        df_all.index = df_all.index.tz_localize("UTC")        
+      173 +                                                              
+      174 +    df_2026 = df_all[                                         
+      175 +        (df_all.index.year == 2026) & (df_all.index.month ==  
+          +3)                                                            
+      176 +    ].copy()                                                  
+      177 +                                                              
+      178      fig = go.Figure()                                         
+      179 -    for regime in REGIME_ORDER:                               
+      180 -        sub = df[df["regime"] == regime]                      
+      181 -        y_clipped = sub[y_col].clip(upper=y_clip)             
+      179 +                                                              
+      180 +    if df_2026.empty:                                         
+      181 +        fig.add_annotation(text="No 2026-03 data available",  
+          +x=0.5, y=0.5,                                                 
+      182 +                           xref="paper", yref="paper",        
+          +showarrow=False)                                              
+      183 +        fig.update_layout(title="2026 aFRR Forecast vs Actual 
+          + (March)", height=450)                                        
+      184 +        return fig                                            
+      185 +                                                              
+      186 +    df_2026 = assign_regimes(df_2026)                         
+      187 +    required = ["da_price_eur_mwh", "gas_price_eur_mwh",      
+          +"eu_ets_price_eur_t",                                         
+      188 +                "affr_price_eur_mw", "css"]                   
+      189 +    df_2026 = df_2026.dropna(subset=required)                 
+      190 +                                                              
+      191 +    # Discover available years                                
+      192 +    available_years: list[int] = []                           
+      193 +    for p in outputs_models.glob("regime_*_*_model.pkl"):     
+      194 +        parts = p.stem.split("_")                             
+      195 +        if len(parts) == 4 and parts[3] == "model" and        
+          +parts[1] in ("high", "medium", "low"):                        
+      196 +            try:                                              
+      197 +                available_years.append(int(parts[2]))         
+      198 +            except ValueError:                                
+      199 +                pass                                          
+      200 +    available_years = sorted(set(available_years))            
+      201 +                                                              
+      202 +    def _predict_row(da_price, gas_price, ets_price, regime,  
+          +year):                                                        
+      203 +        carbon_cost = ets_price * CARBON_INTENSITY /          
+          +EFFICIENCY                                                    
+      204 +        css = da_price - (gas_price / EFFICIENCY) -           
+          +carbon_cost                                                   
+      205 +        model_path = outputs_models /                         
+          +f"regime_{regime}_{year}_model.pkl"                           
+      206 +        with open(model_path, "rb") as fh:                    
+      207 +            model = pickle.load(fh)                           
+      208 +        fv = pd.DataFrame([[1.0, css]], columns=["const",     
+          +"css"])                                                       
+      209 +        return float(model.predict(fv)[0])                    
+      210 +                                                              
+      211 +    idx = df_2026.index                                       
+      212 +    if hasattr(idx, "tz") and idx.tz is not None:             
+      213 +        idx = idx.tz_localize(None)                           
+      214 +                                                              
+      215 +    # Actual                                                  
+      216 +    fig.add_trace(go.Scatter(                                 
+      217 +        x=idx,                                                
+      218 +        y=df_2026["affr_price_eur_mw"],                       
+      219 +        mode="lines",                                         
+      220 +        name="Actual aFRR",                                   
+      221 +        line=dict(color="black", width=2),                    
+      222 +    ))                                                        
+      223 +                                                              
+      224 +    palette = [                                               
+      225 +        "#E53935", "#8E24AA", "#1E88E5", "#00ACC1",           
+      226 +        "#43A047", "#FB8C00", "#6D4C41", "#546E7A",           
+      227 +    ]                                                         
+      228 +                                                              
+      229 +    for i, year in enumerate(available_years):                
+      230 +        preds = []                                            
+      231 +        for _, row in df_2026.iterrows():                     
+      232 +            try:                                              
+      233 +                p = _predict_row(                             
+      234 +                    row["da_price_eur_mwh"],                  
+      235 +                    row["gas_price_eur_mwh"],                 
+      236 +                    row["eu_ets_price_eur_t"],                
+      237 +                    row["regime"],                            
+      238 +                    year,                                     
+      239 +                )                                             
+      240 +            except Exception:                                 
+      241 +                p = None                                      
+      242 +            preds.append(p)                                   
+      243 +                                                              
+      244          fig.add_trace(go.Scatter(                             
+      245 -            x=sub["css"],                                     
+      246 -            y=y_clipped,                                      
+      247 -            mode="markers",                                   
+      248 -            name=f"{regime.capitalize()} (n={len(sub):,})",   
+      249 -            marker=dict(color=REGIME_COLORS[regime], size=4,  
+          -opacity=0.5),                                                 
+      245 +            x=idx,                                            
+      246 +            y=preds,                                          
+      247 +            mode="lines",                                     
+      248 +            name=f"Model {year}",                             
+      249 +            line=dict(color=palette[i % len(palette)],        
+          +width=1.5),                                                   
+      250 +            opacity=0.8,                                      
+      251          ))                                                    
+      252 -        if len(sub) > 1:                                      
+      253 -            coeffs = np.polyfit(sub["css"], y_clipped, 1)     
+      254 -            x_range = np.linspace(sub["css"].min(),           
+          -sub["css"].max(), 200)                                        
+      255 -            fig.add_trace(go.Scatter(                         
+      256 -                x=x_range,                                    
+      257 -                y=np.polyval(coeffs, x_range),                
+      258 -                mode="lines",                                 
+      259 -                name=f"{regime.capitalize()} trend",          
+      260 -                line=dict(color=REGIME_COLORS[regime],        
+          -width=2),                                                     
+      261 -                showlegend=False,                             
+      262 -            ))                                                
+      252                                                                
+      253      fig.update_layout(                                        
+      254 -        title="CSS vs aFRR-up Prices by Market Regime",       
+      255 -        xaxis_title="Clean Spark Spread (€/MWh)",             
+      256 -        yaxis_title=f"aFRR-up Price (€/MW                     
+          -, clipped at 99th pctile: {y_clip:.0f})",                     
+      257 -        yaxis_range=[0, y_clip * 1.02],                       
+      254 +        title="2026 aFRR Forecast vs Actual (March,           
+          +regime-matched)",                                             
+      255 +        xaxis_title="Date",                                   
+      256 +        yaxis_title="aFRR-up Price (€/MW)",                   
+      257          legend=dict(orientation="h", y=-0.15),                
+      258 -        height=500,                                           
+      258 +        height=450,                                           
+      259      )                                                         
+      260      return fig                                                
+      261                                                                
+      262                                                                
+      263  # ----------------------------------------------------------- 
+           ----------------                                              
+      264 -# Figure 3: Forecast curves                                   
+      264 +# Figure 4: Regime distribution                               
+      265  # ----------------------------------------------------------- 
+           ----------------                                              
+      266                                                                
+      267 -def _fig_forecast_curves() -> go.Figure:                      
+      268 -    gas_range = np.linspace(FORECAST_GAS_MIN,                 
+          -FORECAST_GAS_MAX, FORECAST_GAS_STEPS)                         
+      267 +def _fig_regime_distribution(df: pd.DataFrame) -> go.Figure:  
+      268 +    df = df.copy()                                            
+      269 +    df["year"] = df.index.year                                
+      270 +    pivot = df.groupby(["year",                               
+          +"regime"]).size().unstack(fill_value=0)                       
+      271                                                                
+      272 -    fig = make_subplots(                                      
+      273 -        rows=1, cols=3,                                       
+      274 -        subplot_titles=[f"{r.capitalize()} Regime" for r in   
+          -REGIME_ORDER],                                                
+      275 -        shared_yaxes=True,                                    
+      276 -    )                                                         
+      272 +    for r in REGIME_ORDER:                                    
+      273 +        if r not in pivot.columns:                            
+      274 +            pivot[r] = 0                                      
+      275 +    pivot = pivot[REGIME_ORDER]                               
+      276                                                                
+      277 -    for col_idx, regime in enumerate(REGIME_ORDER, start=1):  
+      278 -        for i, da_price in enumerate(FORECAST_DA_SCENARIOS):  
+      279 -            prices = [                                        
+      280 -                estimate_afrr_price(                          
+      281 -                    da_price=da_price,                        
+      282 -                    gas_price=float(gas),                     
+      283 -                    eu_ets_price=FORECAST_ETS_PRICE,          
+      284 -                    regime=regime,                            
+      285 -                )                                             
+      286 -                for gas in gas_range                          
+      287 -            ]                                                 
+      288 -            fig.add_trace(go.Scatter(                         
+      289 -                x=gas_range,                                  
+      290 -                y=prices,                                     
+      291 -                mode="lines",                                 
+      292 -                name=f"DA = {da_price:.0f} €/MWh",            
+      293 -                line=dict(color=DA_SCENARIO_COLORS[i %        
+          -len(DA_SCENARIO_COLORS)], width=2),                           
+      294 -                showlegend=(col_idx == 1),                    
+      295 -            ), row=1, col=col_idx)                            
+      277 +    totals = pivot.sum(axis=1)                                
+      278 +    pivot_pct = pivot.div(totals, axis=0) * 100               
+      279 +    years = [str(y) for y in pivot.index.tolist()]            
+      280                                                                
+      281 -        fig.update_xaxes(title_text="Gas Price (€/MWh_th)",   
+          -row=1, col=col_idx)                                           
+      281 +    fig = go.Figure()                                         
+      282 +    for regime in REGIME_ORDER:                               
+      283 +        heights = pivot_pct[regime].values                    
+      284 +        fig.add_trace(go.Bar(                                 
+      285 +            name=f"{regime.capitalize()} regime",             
+      286 +            x=years,                                          
+      287 +            y=heights,                                        
+      288 +            marker_color=REGIME_COLORS[regime],               
+      289 +            text=[f"{h:.0f}%" if h >= 5 else "" for h in      
+          +heights],                                                     
+      290 +            textposition="inside",                            
+      291 +        ))                                                    
+      292                                                                
+      293 -    fig.update_yaxes(title_text="Est. aFRR-up Price (€/MW)",  
+          -row=1, col=1)                                                 
+      293      fig.update_layout(                                        
+      294 -        title=f"aFRR-up Opportunity Cost vs Gas Forward Price 
+          -  (ETS = {FORECAST_ETS_PRICE:.0f} €/tCO₂)",                   
+      295 -        height=500,                                           
+      294 +        barmode="stack",                                      
+      295 +        title="Market Regime Distribution by Year",           
+      296 +        xaxis_title="Year",                                   
+      297 +        yaxis_title="Share of PTUs (%)",                      
+      298          legend=dict(orientation="h", y=-0.15),                
+      299 +        height=450,                                           
+      300 +        yaxis_range=[0, 105],                                 
+      301      )                                                         
+      302      return fig                                                
+      303                                                                
+     ...
+      221  </head>                                                       
+      222  <body>                                                        
+      223    <h1>aFRR-up Opportunity Cost Dashboard</h1>                 
+      224 -  <p class="subtitle">Gas peaker plant (CCGT) — DE-LU 2022–   
+          -2023 | Model: aFRR = β₀ + β₁·CSS per regime</p>               
+      224 +  <p class="subtitle">Gas peaker plant (CCGT) — DE-LU 2020–   
+          +2026 | Model: aFRR = β₀ + β₁·CSS per regime × year</p>        
+      225                                                                
+      226    {cards}                                                     
+      227                                                                
+      228    <footer>                                                    
+      229      Generated by <code>src/analysis/dashboard.py</code>       
+           &mdash;                                                       
+      230 -    aFRR Opportunity Cost Calculator &mdash; DE-LU 2022–2023  
+      230 +    aFRR Opportunity Cost Calculator &mdash; DE-LU 2020–2026  
+      231    </footer>                                                   
+      232  </body>                                                       
+      233  </html>"""                                                    
+     ...
+      241      df: pd.DataFrame,                                         
+      242      outputs_reports: Path = OUTPUTS_REPORTS,                  
+      243      outputs_models: Path = OUTPUTS_MODELS,                    
+      244 +    data_processed: Path = DATA_PROCESSED,                    
+      245  ) -> Path:                                                    
+      246      """Generate a self-contained interactive Plotly HTML      
+           dashboard.                                                    
+      247                                                                
+      248      Args:                                                     
+      249          df: DataFrame with all market_regimes.csv columns.    
+      250          outputs_reports: Directory to save HTML dashboard     
+           into.                                                         
+      251 -        outputs_models: Not used directly;                    
+          -estimate_afrr_price uses config paths.                        
+      251 +        outputs_models: Directory with pkl files; used for    
+          +forecast figure.                                              
+      252 +        data_processed: Directory with combined_dataset.csv;  
+          +used for forecast figure.                                     
+      253                                                                
+      254      Returns:                                                  
+      255          Path to saved HTML file.                              
+     ...
+      257                                                                
+      258      charts = [                                                
+      259          ("1. Historical aFRR-up Capacity Prices",             
+           _fig_historical_afrr(df)),                                    
+      260 -        ("2. CSS vs aFRR-up Prices by Regime                  
+          -", _fig_css_vs_affr(df)),                                     
+      261 -        ("3. Opportunity Cost Forecast by Gas Forward Price", 
+          - _fig_forecast_curves()),                                     
+      260 +        ("2. CSS vs aFRR-up Prices by Year                    
+          +", _fig_css_vs_affr(df)),                                     
+      261 +        ("3. 2026 aFRR Forecast vs Actual (March)",           
+          +_fig_2026_forecast(data_processed, outputs_models)),          
+      262 +        ("4. Market Regime Distribution by Year",             
+          +_fig_regime_distribution(df)),                                
+      263      ]                                                         
+      264                                                                
+      265      divs = [(title, _fig_to_div(fig, f"chart-{i+1}")) for i,  
+           (title, fig) in enumerate(charts)]                            
+
+● Now update tests/test_analysis.py:
+
+● Write(tests/test_analysis.py)
+  ⎿  Added 106 lines, removed 21 lines
+      2  Unit tests for the analysis module (Phase 3).                   
+      3                                                                  
+      4  Tests:                                                          
+      5 -    - visualization: 3 plot functions produce PNG files         
+      5 +    - visualization: 4 plot functions produce PNG files         
+      6      - report_generator: HTML report with expected content       
+      7      - dashboard: self-contained HTML dashboard with Plotly      
+      8  """                                                             
+     ...
+      20                                                                 
+      21  from src.analysis.visualization import (                       
+      22      plot_css_vs_affr,                                          
+      23 -    plot_forecast_curves,                                      
+      23 +    plot_2026_forecast,                                        
+      24      plot_historical_afrr,                                      
+      25 +    plot_regime_distribution,                                  
+      26  )                                                              
+      27  from src.analysis.report_generator import generate_report      
+      28  from src.analysis.dashboard import generate_dashboard          
+     ...
+      33                                                                 
+      34  @pytest.fixture                                                
+      35  def synthetic_df() -> pd.DataFrame:                            
+      36 -    """50-row DataFrame with all market_regimes.csv columns."""
+      36 +    """50-row DataFrame spanning multiple years                
+         +with all market_regimes.csv columns."""                        
+      37      rng = np.random.default_rng(42)                            
+      38      n = 50                                                     
+      39 -    idx = pd.date_range("2022-01-01", periods=n, freq="h",     
+         -tz="UTC")                                                      
+      39                                                                 
+      40 +    # Span 2020–2022 so per-year subplot tests have multiple   
+         +years                                                          
+      41 +    idx = pd.date_range("2020-01-01", periods=n, freq="1000h", 
+         + tz="UTC")                                                     
+      42 +                                                               
+      43      regimes = ["high"] * 12 + ["medium"] * 25 + ["low"] * 13   
+      44      rng.shuffle(regimes)                                       
+      45                                                                 
+     ...
+       98      return models_dir                                         
+       99                                                                
+      100                                                                
+      101 +@pytest.fixture                                               
+      102 +def fake_combined_csv(tmp_path: Path, fake_model_dir: Path)   
+          +-> Path:                                                      
+      103 +    """Write a temp combined_dataset.csv with 2026-03 PTU     
+          +data."""                                                      
+      104 +    rng = np.random.default_rng(99)                           
+      105 +    n = 8  # 8 hourly rows: 2026-03-01 → 2026-03-01T07        
+      106 +                                                              
+      107 +    idx = pd.date_range("2026-03-01", periods=n, freq="h",    
+          +tz="UTC")                                                     
+      108 +    df = pd.DataFrame(index=idx)                              
+      109 +                                                              
+      110 +    # ccgt_generation_mw spread across all regime ranges      
+      111 +    # K-Means boundaries: low < 5858, medium 5858–10546, high 
+          + >= 10546                                                     
+      112 +    df["ccgt_generation_mw"] = [2000, 4000, 6000, 7000, 8000, 
+          + 9000, 11000, 13000]                                          
+      113 +    df["da_price_eur_mwh"] = rng.uniform(50, 120, n)          
+      114 +    df["gas_price_eur_mwh"] = rng.uniform(30, 60, n)          
+      115 +    df["eu_ets_price_eur_t"] = rng.uniform(55, 75, n)         
+      116 +    # CSS = DA - gas/0.5 - ets*0.202/0.5                      
+      117 +    df["css"] = (                                             
+      118 +        df["da_price_eur_mwh"]                                
+      119 +        - df["gas_price_eur_mwh"] / 0.5                       
+      120 +        - df["eu_ets_price_eur_t"] * 0.202 / 0.5              
+      121 +    )                                                         
+      122 +    df["affr_price_eur_mw"] = (5.0 + 0.3 * df["css"] +        
+          +rng.normal(0, 5, n)).clip(lower=0)                            
+      123 +                                                              
+      124 +    processed_dir = tmp_path / "processed"                    
+      125 +    processed_dir.mkdir(parents=True)                         
+      126 +    csv_path = processed_dir / "combined_dataset.csv"         
+      127 +    df.to_csv(csv_path)                                       
+      128 +    return csv_path                                           
+      129 +                                                              
+      130 +                                                              
+      131  # ----------------------------------------------------------- 
+           ----------------                                              
+      132  # TestPlotHistoricalAfrr                                      
+      133  # ----------------------------------------------------------- 
+           ----------------                                              
+     ...
+      131                                                                
+      132                                                                
+      133  # ----------------------------------------------------------- 
+           ----------------                                              
+      134 -# TestPlotForecastCurves                                      
+      134 +# TestPlot2026Forecast                                        
+      135  # ----------------------------------------------------------- 
+           ----------------                                              
+      136                                                                
+      137 -class TestPlotForecastCurves:                                 
+      137 +class TestPlot2026Forecast:                                   
+      138      def test_creates_png(                                     
+      139 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      139 +        self,                                                 
+      140 +        synthetic_df: pd.DataFrame,                           
+      141 +        fake_model_dir: Path,                                 
+      142 +        fake_combined_csv: Path,                              
+      143 +        tmp_path: Path,                                       
+      144      ) -> None:                                                
+      145 -        import src.models.predictions as pred_module          
+      146 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      147 -                                                              
+      145          plots_dir = tmp_path / "plots"                        
+      146 -        plot_forecast_curves(synthetic_df,                    
+          -outputs_plots=plots_dir)                                      
+      146 +        plot_2026_forecast(                                   
+      147 +            synthetic_df,                                     
+      148 +            outputs_plots=plots_dir,                          
+      149 +            outputs_models=fake_model_dir,                    
+      150 +            data_processed=fake_combined_csv.parent,          
+      151 +        )                                                     
+      152          assert (plots_dir / "forecast_curves.png").exists()   
+      153                                                                
+      154      def test_returns_path(                                    
+      155 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      155 +        self,                                                 
+      156 +        synthetic_df: pd.DataFrame,                           
+      157 +        fake_model_dir: Path,                                 
+      158 +        fake_combined_csv: Path,                              
+      159 +        tmp_path: Path,                                       
+      160      ) -> None:                                                
+      161 -        import src.models.predictions as pred_module          
+      162 -        monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+          -fake_model_dir)                                               
+      161 +        result = plot_2026_forecast(                          
+      162 +            synthetic_df,                                     
+      163 +            outputs_plots=tmp_path / "plots",                 
+      164 +            outputs_models=fake_model_dir,                    
+      165 +            data_processed=fake_combined_csv.parent,          
+      166 +        )                                                     
+      167 +        assert isinstance(result, Path)                       
+      168 +        assert result.suffix == ".png"                        
+      169                                                                
+      170 -        result = plot_forecast_curves(synthetic_df,           
+          -outputs_plots=tmp_path / "plots")                             
+      170 +                                                              
+      171 +# ----------------------------------------------------------- 
+          +----------------                                              
+      172 +# TestPlotRegimeDistribution                                  
+      173 +# ----------------------------------------------------------- 
+          +----------------                                              
+      174 +                                                              
+      175 +class TestPlotRegimeDistribution:                             
+      176 +    def test_creates_png(self, synthetic_df: pd.DataFrame,    
+          +tmp_path: Path) -> None:                                      
+      177 +        plots_dir = tmp_path / "plots"                        
+      178 +        plot_regime_distribution(synthetic_df,                
+          +outputs_plots=plots_dir)                                      
+      179 +        assert (plots_dir /                                   
+          +"regime_distribution.png").exists()                           
+      180 +                                                              
+      181 +    def test_returns_path(self, synthetic_df: pd.DataFrame,   
+          +tmp_path: Path) -> None:                                      
+      182 +        result = plot_regime_distribution(synthetic_df,       
+          +outputs_plots=tmp_path / "plots")                             
+      183          assert isinstance(result, Path)                       
+      184          assert result.suffix == ".png"                        
+      185                                                                
+     ...
+      218                                                                
+      219  class TestGenerateDashboard:                                  
+      220      def test_creates_html(                                    
+      221 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      221 +        self,                                                 
+      222 +        synthetic_df: pd.DataFrame,                           
+      223 +        fake_model_dir: Path,                                 
+      224 +        fake_combined_csv: Path,                              
+      225 +        tmp_path: Path,                                       
+      226 +        monkeypatch,                                          
+      227      ) -> None:                                                
+      228          import src.models.predictions as pred_module          
+      229          monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+           fake_model_dir)                                               
+      230                                                                
+      231          reports_dir = tmp_path / "reports"                    
+      232          generate_dashboard(                                   
+      233 -            synthetic_df, outputs_reports=reports_dir,        
+          -outputs_models=fake_model_dir                                 
+      233 +            synthetic_df,                                     
+      234 +            outputs_reports=reports_dir,                      
+      235 +            outputs_models=fake_model_dir,                    
+      236 +            data_processed=fake_combined_csv.parent,          
+      237          )                                                     
+      238          assert (reports_dir / "dashboard.html").exists()      
+      239                                                                
+      240      def test_html_contains_plotly(                            
+      241 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      241 +        self,                                                 
+      242 +        synthetic_df: pd.DataFrame,                           
+      243 +        fake_model_dir: Path,                                 
+      244 +        fake_combined_csv: Path,                              
+      245 +        tmp_path: Path,                                       
+      246 +        monkeypatch,                                          
+      247      ) -> None:                                                
+      248          import src.models.predictions as pred_module          
+      249          monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+           fake_model_dir)                                               
+      250                                                                
+      251          path = generate_dashboard(                            
+      252 -            synthetic_df, outputs_reports=tmp_path /          
+          -"reports", outputs_models=fake_model_dir                      
+      252 +            synthetic_df,                                     
+      253 +            outputs_reports=tmp_path / "reports",             
+      254 +            outputs_models=fake_model_dir,                    
+      255 +            data_processed=fake_combined_csv.parent,          
+      256          )                                                     
+      257          content = path.read_text(encoding="utf-8")            
+      258          assert "plotly" in content.lower()                    
+      259                                                                
+      260      def test_html_is_self_contained(                          
+      261 -        self, synthetic_df: pd.DataFrame, fake_model_dir:     
+          -Path, tmp_path: Path, monkeypatch                             
+      261 +        self,                                                 
+      262 +        synthetic_df: pd.DataFrame,                           
+      263 +        fake_model_dir: Path,                                 
+      264 +        fake_combined_csv: Path,                              
+      265 +        tmp_path: Path,                                       
+      266 +        monkeypatch,                                          
+      267      ) -> None:                                                
+      268          """Verify the dashboard links to Plotly CDN (one      
+           external script, no inline lib)."""                           
+      269          import src.models.predictions as pred_module          
+      270          monkeypatch.setattr(pred_module, "OUTPUTS_MODELS",    
+           fake_model_dir)                                               
+      271                                                                
+      272          path = generate_dashboard(                            
+      273 -            synthetic_df, outputs_reports=tmp_path /          
+          -"reports", outputs_models=fake_model_dir                      
+      273 +            synthetic_df,                                     
+      274 +            outputs_reports=tmp_path / "reports",             
+      275 +            outputs_models=fake_model_dir,                    
+      276 +            data_processed=fake_combined_csv.parent,          
+      277          )                                                     
+      278          content = path.read_text(encoding="utf-8")            
+      279          assert "cdn.plot.ly" in content or "plotly" in        
+           content.lower()                                               
+
+● Now check if the regime classifier background task completed, then run
+  regression models:
+
+● Read 1 file (ctrl+o to expand)
+
+● Bash(source venv/bin/activate && python src/models/regression_models.py 2>&1 |
+       tail -15)
+  ⎿  2026-03-10 16:12:31 | INFO     | __main__ | Model saved: /home/anurag/
+     GitRepos/global_tech_challenge/outputs/models/regime_high_2026_model.p
+     kl
+     … +22 lines (ctrl+o to expand)
+
+● Models are now regenerated for all years. Now run the analysis scripts and
+  then the tests:
+
+● Bash(source venv/bin/activate && python src/analysis/visualization.py 2>&1 |
+      tail -10)
+  ⎿  2026-03-10 16:12:46 | INFO     | __main__ | Saved: /home/anurag/GitRep
+     os/global_tech_challenge/outputs/plots/css_vs_affr_prices.png
+     2026-03-10 16:12:47 | INFO     | src.models.regime_classifier | Regime
+     … +12 lines (ctrl+o to expand)
+
+● Let me check the actual column names in combined_dataset.csv:
+
+● Bash(source venv/bin/activate && python -c "import pandas as pd; df =
+      pd.read_csv('data/processed/combined_dataset.csv', index_col=0, nrows=2);
+      print(df.columns.toli…)
+  ⎿  ['da_price_eur_mwh', 'affr_price_eur_mw', 'ccgt_generation_mw', 'eu_et
+     s_price_eur_tco2', 'gas_price_eur_mwh_th', 'css', 'hour_of_day', 'day_
+     of_week', 'month', 'year', 'is_weekend', 'css_lag_24h', 'css_rolling_2
+     4h_mean']
+
+● Bash(source venv/bin/activate && python -c "import pandas as pd; df =
+      pd.read_csv('data/processed/market_regimes.csv', index_col=0, nrows=2);
+      print(df.columns.tolist…)
+  ⎿  ['da_price_eur_mwh', 'affr_price_eur_mw', 'ccgt_generation_mw', 'eu_et
+     s_price_eur_tco2', 'gas_price_eur_mwh_th', 'css', 'hour_of_day', 'day_
+     of_week', 'month', 'year', 'is_weekend', 'css_lag_24h', 'css_rolling_2
+     4h_mean', 'regime']
+
+● The real CSV uses gas_price_eur_mwh_th and eu_ets_price_eur_tco2. Let me fix
+  the column names in visualization.py, dashboard.py, and the test fixture:
+
+● Update(src/analysis/visualization.py)
+  ⎿  Added 1 line, removed 1 line
+      226      df_2026 = assign_regimes(df_2026)                         
+      227                                                                
+      228      # Drop rows with missing price columns                    
+      229 -    required = ["da_price_eur_mwh", "gas_price_eur_mwh",      
+          -"eu_ets_price_eur_t",                                         
+      229 +    required = ["da_price_eur_mwh", "gas_price_eur_mwh_th",   
+          +"eu_ets_price_eur_tco2",                                      
+      230                  "affr_price_eur_mw", "css"]                   
+      231      df_2026 = df_2026.dropna(subset=required)                 
+      232                                                                
+
+● Update(src/analysis/visualization.py)
+  ⎿  Added 2 lines, removed 2 lines
+      275              try:                                              
+      276                  p = _predict_row(                             
+      277                      row["da_price_eur_mwh"],                  
+      278 -                    row["gas_price_eur_mwh"],                 
+      279 -                    row["eu_ets_price_eur_t"],                
+      278 +                    row["gas_price_eur_mwh_th"],              
+      279 +                    row["eu_ets_price_eur_tco2"],             
+      280                      row["regime"],                            
+      281                      year,                                     
+      282                  )                                             
+
+● Update(src/analysis/dashboard.py)
+  ⎿  Added 1 line, removed 1 line
+      181          return fig                                            
+      182                                                                
+      183      df_2026 = assign_regimes(df_2026)                         
+      184 -    required = ["da_price_eur_mwh", "gas_price_eur_mwh",      
+          -"eu_ets_price_eur_t",                                         
+      184 +    required = ["da_price_eur_mwh", "gas_price_eur_mwh_th",   
+          +"eu_ets_price_eur_tco2",                                      
+      185                  "affr_price_eur_mw", "css"]                   
+      186      df_2026 = df_2026.dropna(subset=required)                 
+      187                                                                
+
+● Update(src/analysis/dashboard.py)
+  ⎿  Added 2 lines, removed 2 lines
+      229              try:                                              
+      230                  p = _predict_row(                             
+      231                      row["da_price_eur_mwh"],                  
+      232 -                    row["gas_price_eur_mwh"],                 
+      233 -                    row["eu_ets_price_eur_t"],                
+      232 +                    row["gas_price_eur_mwh_th"],              
+      233 +                    row["eu_ets_price_eur_tco2"],             
+      234                      row["regime"],                            
+      235                      year,                                     
+      236                  )                                             
+
+● Now update the test fixture to use correct column names:
+
+● Update(tests/test_analysis.py)
+  ⎿  Added 4 lines, removed 4 lines
+      114      # K-Means boundaries: low < 5858, medium 5858–10546, high 
+            >= 10546                                                     
+      115      df["ccgt_generation_mw"] = [2000, 4000, 6000, 7000, 8000, 
+            9000, 11000, 13000]                                          
+      116      df["da_price_eur_mwh"] = rng.uniform(50, 120, n)          
+      117 -    df["gas_price_eur_mwh"] = rng.uniform(30, 60, n)          
+      118 -    df["eu_ets_price_eur_t"] = rng.uniform(55, 75, n)         
+      117 +    df["gas_price_eur_mwh_th"] = rng.uniform(30, 60, n)       
+      118 +    df["eu_ets_price_eur_tco2"] = rng.uniform(55, 75, n)      
+      119      # CSS = DA - gas/0.5 - ets*0.202/0.5                      
+      120      df["css"] = (                                             
+      121          df["da_price_eur_mwh"]                                
+      122 -        - df["gas_price_eur_mwh"] / 0.5                       
+      123 -        - df["eu_ets_price_eur_t"] * 0.202 / 0.5              
+      122 +        - df["gas_price_eur_mwh_th"] / 0.5                    
+      123 +        - df["eu_ets_price_eur_tco2"] * 0.202 / 0.5           
+      124      )                                                         
+      125      df["affr_price_eur_mw"] = (5.0 + 0.3 * df["css"] +        
+           rng.normal(0, 5, n)).clip(lower=0)                            
+      126                                                                
+
+● Now run visualization again:
+
+● Bash(source venv/bin/activate && python src/analysis/visualization.py 2>&1 |
+      tail -10)
+  ⎿  2026-03-10 16:13:41 | INFO     | __main__ | Loading /home/anurag/GitRe
+     pos/global_tech_challenge/data/processed/market_regimes.csv
+     2026-03-10 16:13:42 | INFO     | __main__ | Saved: /home/anurag/GitRep
+     … +11 lines (ctrl+o to expand)
+
+● All 4 plots generated. Now run dashboard and report generator:
+
+● Bash(source venv/bin/activate && python src/analysis/dashboard.py 2>&1 | tail
+      -5 && python src/analysis/report_generator.py 2>&1 | tail -5)
+  ⎿  2026-03-10 16:13:51 | INFO     | __main__ | Loading /home/anurag/GitRe
+     pos/global_tech_challenge/data/processed/market_regimes.csv
+     2026-03-10 16:13:53 | INFO     | src.models.regime_classifier | Regime
+     … +11 lines (ctrl+o to expand)
+
+● All scripts pass. Now run the tests:
+
+● Bash(source venv/bin/activate && venv/bin/pytest tests/test_analysis.py -v
+      2>&1)
+  ⎿  ============================= test session starts ====================
+     ==========
+     platform linux -- Python 3.10.12, pytest-9.0.2, pluggy-1.6.0 -- /home/
+     … +21 lines (ctrl+o to expand)
+
+● All 15 analysis tests pass. Now run the full suite:
+
+● Bash(source venv/bin/activate && venv/bin/pytest tests/ -v 2>&1 | tail -30)
+  ⎿  tests/test_models.py::TestAssignRegimes::test_all_regimes_present PASS
+     ED [ 70%]
+     tests/test_models.py::TestAssignRegimes::test_regime_column_added PASS
+     … +34 lines (ctrl+o to expand)
+
+● All 91 tests pass (89 existing + 2 new). Let me update the memory:
+
+● Recalled 1 memory, wrote 5 memories (ctrl+o to expand)
+
+● All done. Here's a summary of what was implemented:
+
+  Phase 3 Overhaul — Complete
+
+  Step 0 — Re-ran models for all years (2020–2026), producing 21 pkl files.
+
+  Step 1 — visualization.py:
+  - plot_historical_afrr — unchanged
+  - plot_css_vs_affr — replaced with 2×N per-year subplot grid (one
+  scatter+trendline per year, coloured by regime)
+  - plot_forecast_curves → plot_2026_forecast — loads actual 2026-03 PTUs from
+  combined_dataset.csv, assigns regimes, runs all available year models, plots
+  actual (black) vs model forecasts (coloured lines)
+  - plot_regime_distribution (new) — stacked bar chart of regime share per year
+  with % labels
+
+  Step 2 — dashboard.py:
+  - Figure 2: per-year CSS subplots (2×3 Plotly grid)
+  - Figure 3: interactive 2026 forecast vs actual (replaces gas-sweep curves)
+  - Figure 4: regime distribution stacked bar (new)
+  - generate_dashboard now accepts injectable data_processed kwarg
+
+  Step 3 — tests/test_analysis.py:
+  - TestPlotForecastCurves → TestPlot2026Forecast (uses fake_combined_csv
+  fixture with real 2026-03 column names — gas_price_eur_mwh_th,
+  eu_ets_price_eur_tco2)
+  - TestPlotRegimeDistribution (new, 2 tests)
+  - synthetic_df spans 2020–2022 (multi-year index)
+
+  Result: 91/91 tests pass
+
+✻ Churned for 7m 15s
+
+● Background command "Re-run regime classifier" completed (exit code 0)
+
+● The background regime classifier task completed successfully (exit code 0) —
+  already confirmed earlier from the output. No action needed.

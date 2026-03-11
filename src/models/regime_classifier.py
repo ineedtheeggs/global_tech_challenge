@@ -2,10 +2,13 @@
 Market regime classifier for aFRR Opportunity Cost Calculator.
 
 Classifies each PTU (hourly observation) into one of three market regimes
-based on CCGT generation percentiles:
-  - high:   CCGT generation > 75th percentile
-  - medium: CCGT generation between 25th and 75th percentile
-  - low:    CCGT generation < 25th percentile
+based on fixed MW thresholds derived from K-Means centroids (default) or
+capacity-based thirds.  The boundary between two regimes is the midpoint
+between the two adjacent centroids.
+
+Toggle the classification method via REGIME_CLASSIFICATION_METHOD in config.py:
+  - 'kmeans'   → boundaries derived from K-Means cluster centroids
+  - 'capacity' → boundaries derived from capacity-based thirds
 
 Usage:
     python src/models/regime_classifier.py
@@ -13,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -25,7 +29,9 @@ from src.utils.config import (
     ANALYSIS_END,
     ANALYSIS_START,
     DATA_PROCESSED,
-    REGIME_THRESHOLDS,
+    REGIME_CAPACITY_JSON,
+    REGIME_CLASSIFICATION_METHOD,
+    REGIME_KMEANS_JSON,
 )
 from src.utils.logging_setup import get_logger
 
@@ -33,6 +39,55 @@ logger = get_logger(__name__)
 
 REQUIRED_COLUMNS = ["ccgt_generation_mw", "affr_price_eur_mw", "da_price_eur_mwh", "css"]
 OUTPUT_PATH = DATA_PROCESSED / "market_regimes.csv"
+
+
+def load_centroids(method: str) -> dict[str, float]:
+    """Load regime centroid MW values from the appropriate JSON reference file.
+
+    Args:
+        method: Classification method — 'kmeans' or 'capacity'.
+
+    Returns:
+        Dict mapping regime name ('low', 'medium', 'high') to centroid MW.
+
+    Raises:
+        ValueError: If method is not 'kmeans' or 'capacity'.
+        FileNotFoundError: If the JSON reference file does not exist.
+    """
+    if method == "kmeans":
+        path = REGIME_KMEANS_JSON
+    elif method == "capacity":
+        path = REGIME_CAPACITY_JSON
+    else:
+        raise ValueError(
+            f"Unknown classification method '{method}'. "
+            "Must be 'kmeans' or 'capacity'."
+        )
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Regime reference file not found: {path}. "
+            "Ensure data/references/ contains the JSON file."
+        )
+
+    with open(path) as fh:
+        data = json.load(fh)
+
+    return {regime: float(info["ccgt_mean_mw"]) for regime, info in data.items()}
+
+
+def compute_thresholds(centroids: dict[str, float]) -> tuple[float, float]:
+    """Compute regime boundary thresholds as midpoints between adjacent centroids.
+
+    Args:
+        centroids: Dict with keys 'low', 'medium', 'high' and MW values.
+
+    Returns:
+        Tuple of (low_medium_boundary_mw, medium_high_boundary_mw).
+    """
+    low_medium = (centroids["low"] + centroids["medium"]) / 2.0
+    medium_high = (centroids["medium"] + centroids["high"]) / 2.0
+    return low_medium, medium_high
 
 
 def load_and_filter(path: Path) -> pd.DataFrame:
@@ -57,36 +112,36 @@ def load_and_filter(path: Path) -> pd.DataFrame:
     return df
 
 
-def assign_regimes(df: pd.DataFrame) -> pd.DataFrame:
-    """Assign regime labels based on CCGT generation percentiles.
+def assign_regimes(
+    df: pd.DataFrame,
+    method: str = REGIME_CLASSIFICATION_METHOD,
+) -> pd.DataFrame:
+    """Assign regime labels using centroid-derived MW boundaries.
 
-    Thresholds are computed on the filtered dataset so they represent
-    the actual distribution within the analysis window.
+    Loads centroids from the appropriate JSON reference file, computes
+    midpoint thresholds, then labels each row accordingly.
 
     Args:
         df: Filtered DataFrame with 'ccgt_generation_mw' column.
+        method: Classification method — 'kmeans' or 'capacity'.
 
     Returns:
         DataFrame with added 'regime' column.
     """
-    low_threshold = df["ccgt_generation_mw"].quantile(REGIME_THRESHOLDS["medium"])
-    high_threshold = df["ccgt_generation_mw"].quantile(REGIME_THRESHOLDS["high"])
+    centroids = load_centroids(method)
+    low_medium, medium_high = compute_thresholds(centroids)
 
     logger.info(
-        "CCGT generation thresholds — low/medium boundary: %.1f MW, medium/high boundary: %.1f MW",
-        low_threshold,
-        high_threshold,
+        "Regime boundaries (%s) — low/medium: %.1f MW, medium/high: %.1f MW",
+        method,
+        low_medium,
+        medium_high,
     )
 
-    def _label(val: float) -> str:
-        if val > high_threshold:
-            return "high"
-        if val >= low_threshold:
-            return "medium"
-        return "low"
-
     df = df.copy()
-    df["regime"] = df["ccgt_generation_mw"].map(_label)
+    df["regime"] = df["ccgt_generation_mw"].map(
+        lambda v: "high" if v >= medium_high else ("medium" if v >= low_medium else "low")
+    )
     return df
 
 

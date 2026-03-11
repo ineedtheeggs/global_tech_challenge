@@ -42,11 +42,12 @@ METADATA_PATH = OUTPUTS_MODELS / "regime_metadata.json"
 VALID_REGIMES = ("high", "medium", "low")
 
 
-def _load_model(regime: str):
-    """Load the pickled OLS model for the given regime.
+def _load_model(regime: str, year: int = 2022):
+    """Load the pickled OLS model for the given regime and year.
 
     Args:
         regime: One of 'high', 'medium', 'low'.
+        year: Year of the model to load (default 2022 for backward compat).
 
     Returns:
         Fitted statsmodels OLS results object.
@@ -58,7 +59,7 @@ def _load_model(regime: str):
     if regime not in VALID_REGIMES:
         raise ValueError(f"regime must be one of {VALID_REGIMES}, got '{regime}'")
 
-    model_path = OUTPUTS_MODELS / f"regime_{regime}_model.pkl"
+    model_path = OUTPUTS_MODELS / f"regime_{regime}_{year}_model.pkl"
     if not model_path.exists():
         raise FileNotFoundError(
             f"Model file not found: {model_path}. "
@@ -107,6 +108,7 @@ def estimate_afrr_price(
     gas_price: float,
     eu_ets_price: float,
     regime: str,
+    year: int = 2022,
 ) -> float:
     """Estimate aFRR-up opportunity cost bid price.
 
@@ -118,6 +120,7 @@ def estimate_afrr_price(
         gas_price: Gas forward price (€/MWh thermal).
         eu_ets_price: EU-ETS carbon allowance price (€/tCO₂).
         regime: Market regime — one of 'high', 'medium', 'low'.
+        year: Year of the model to use (default 2022 for backward compat).
 
     Returns:
         Estimated aFRR-up price in €/MW.
@@ -131,7 +134,7 @@ def estimate_afrr_price(
     if regime not in VALID_REGIMES:
         raise ValueError(f"regime must be one of {VALID_REGIMES}, got '{regime}'")
 
-    model = _load_model(regime)
+    model = _load_model(regime, year=year)
     css = _compute_css(da_price, gas_price, eu_ets_price)
     logger.debug("Computed CSS: %.4f €/MWh", css)
 
@@ -173,6 +176,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         choices=list(VALID_REGIMES),
         help="Market regime.",
     )
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=2022,
+        metavar="YEAR",
+        help="Year of the fitted model to use (default: 2022).",
+    )
     return parser
 
 
@@ -186,6 +196,7 @@ def main() -> None:
         gas_price=args.gas_price,
         eu_ets_price=args.ets_price,
         regime=args.regime,
+        year=args.year,
     )
 
     css = _compute_css(args.da_price, args.gas_price, args.ets_price)
@@ -197,6 +208,7 @@ def main() -> None:
     print(f"  ETS price:       {args.ets_price:>8.2f} €/tCO₂")
     print(f"  CSS (computed):  {css:>8.2f} €/MWh")
     print(f"  Regime:          {args.regime}")
+    print(f"  Model year:      {args.year}")
     print(f"{'='*50}")
     print(f"  Estimated aFRR price: {price:>8.2f} €/MW")
     print(f"{'='*50}\n")

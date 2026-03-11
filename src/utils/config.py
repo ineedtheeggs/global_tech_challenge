@@ -37,8 +37,8 @@ ENTSOE_API_TOKEN: str | None = os.getenv("ENTSOE_API_TOKEN")
 # ---------------------------------------------------------------------------
 BIDDING_ZONE = "DE_LU"              # ENTSO-E bidding zone code
 
-ANALYSIS_START = "2021-01-01"       # CCGT data available from ~2021-01-09; NaN rows dropped
-ANALYSIS_END = "2021-11-30"         # aFRR prices become forward-filled (unreliable) after this
+ANALYSIS_START = "2020-01-01"       # extended: covers pre-crisis baseline from 2020
+ANALYSIS_END = "2026-03-09"         # extended: gas/DA/CCGT now available through Mar 2026
 
 # CCGT plant assumptions
 EFFICIENCY = 0.50                   # 50% thermal efficiency
@@ -52,6 +52,11 @@ REGIME_THRESHOLDS = {
     "medium": 0.25, # 25th–75th percentile → Medium
     "low": 0.00,    # < 25th percentile → Low generation regime
 }
+
+# Regime classification method — toggle between 'kmeans' and 'capacity'
+REGIME_CLASSIFICATION_METHOD: str = "kmeans"
+REGIME_KMEANS_JSON = DATA_REFERENCES / "regime_kmeans.json"
+REGIME_CAPACITY_JSON = DATA_REFERENCES / "regime_capacity.json"
 
 # ---------------------------------------------------------------------------
 # Data quality parameters
@@ -100,7 +105,10 @@ REGELLEISTUNG_PRODUCT = "SRL"       # Secondary reserve (aFRR)
 REGELLEISTUNG_DIRECTION = "positive"
 
 # ---------------------------------------------------------------------------
-# Pre-compiled aFRR bid prices CSV (replaces regelleistung.net download)
+# Pre-compiled aFRR bid prices CSV (raw bid-level source only)
 # ---------------------------------------------------------------------------
-# Path to static CSV with individual bids per 4-hour product block (2020–2023)
-AFRR_CSV_PATH = Path("/home/anurag/GitRepos/SideScripts/AFRR value finder/AFRR_Bid_Prices_2020-2023.csv")
+# Path to static CSV with individual bids per 4-hour product block (raw source).
+# NOTE: The main pipeline reads data/raw/affr_prices.csv directly (pre-aggregated
+# hourly CSV covering 2020–2026). This path is only used if AFRRBidPriceLoader
+# is called explicitly to re-aggregate from raw bids.
+AFRR_CSV_PATH = DATA_RAW / "AFRR_Bid_Prices_2020-2026.csv"

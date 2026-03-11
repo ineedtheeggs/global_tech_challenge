@@ -13,45 +13,44 @@ This project quantifies the opportunity costs for gas peaker plants participatin
 global-tech-challenge/
 │
 ├── .CLAUDE.md                          # Claude Code context file
-├── README.md                           # Project documentation
 ├── requirements.txt                    # Python dependencies
 ├── .gitignore                          # Git ignore rules
 │
 ├── data/
 │   ├── raw/
 │   │   ├── da_prices.csv               # Day-ahead market prices
-│   │   ├── affr_prices.csv             # aFRR spin-up market prices
+│   │   ├── affr_prices.csv             # aFRR spin-up market prices (pre-aggregated hourly)
+│   │   ├── AFRR_Bid_Prices_2020-2026.csv  # Raw bid-level aFRR source
 │   │   ├── ccgt_generation.csv         # CCGT generation per PTU
 │   │   ├── eu_ets_prices.csv           # Carbon allowance prices
 │   │   └── gas_prices.csv              # Gas forward prices
 │   ├── processed/
 │   │   ├── combined_dataset.csv        # Merged all features
-│   │   ├── train_test_split.csv        # Train/test datasets
 │   │   └── market_regimes.csv          # PTU regime classifications
 │   └── references/
 │       ├── data_sources.md             # External data source documentation
-│       └── data_dictionary.csv         # Column definitions
+│       ├── data_dictionary.csv         # Column definitions
+│       ├── regime_kmeans.json          # K-Means cluster centroids (low/medium/high MW)
+│       └── regime_capacity.json        # Capacity-thirds centroids (alternative method)
 │
 ├── src/
 │   ├── __init__.py
 │   │
 │   ├── data_pipeline/
 │   │   ├── __init__.py
-│   │   ├── data_loader.py              # Load from external sources
+│   │   ├── data_loader.py              # Load from external sources (ENTSO-E, Regelleistung, ETS, Gas)
 │   │   ├── data_cleaner.py             # Handle missing values, outliers
 │   │   ├── feature_engineer.py         # Create CSS, spreads, etc.
 │   │   └── main.py                     # Execute full pipeline
 │   │
 │   ├── models/
 │   │   ├── __init__.py
-│   │   ├── regime_classifier.py        # Classify PTUs into regimes
-│   │   ├── regression_models.py        # Fit OLS models per regime
-│   │   ├── predictions.py              # Generate opportunity cost estimates
-│   │   └── model_validation.py         # R², residual analysis, diagnostics
+│   │   ├── regime_classifier.py        # Classify PTUs into regimes (centroid-based MW thresholds)
+│   │   ├── regression_models.py        # Fit OLS models per year × regime (21 models)
+│   │   └── predictions.py              # Generate opportunity cost estimates
 │   │
 │   ├── analysis/
 │   │   ├── __init__.py
-│   │   ├── statistics.py               # Correlation analysis, summary stats
 │   │   ├── visualization.py            # Plots for regime conditions
 │   │   ├── dashboard.py                # Interactive dashboard
 │   │   └── report_generator.py         # Automated report generation
@@ -59,36 +58,37 @@ global-tech-challenge/
 │   └── utils/
 │       ├── __init__.py
 │       ├── config.py                   # Configuration constants
-│       ├── logging_setup.py            # Logging utilities
-│       └── helpers.py                  # General utility functions
-│
-├── notebooks/
-│   ├── 01_exploratory_analysis.ipynb   # Data exploration
-│   ├── 02_regime_analysis.ipynb        # Market regime investigation
-│   ├── 03_model_development.ipynb      # Model fitting & diagnostics
-│   └── 04_results_interpretation.ipynb # Results & insights
+│       └── logging_setup.py            # Logging utilities
 │
 ├── tests/
 │   ├── __init__.py
-│   ├── test_data_pipeline.py           # Test data loading/cleaning
-│   ├── test_regime_classifier.py       # Test regime classification logic
-│   ├── test_models.py                  # Test regression models
-│   └── test_analysis.py                # Test analysis functions
+│   ├── test_data_pipeline.py           # Test data loading/cleaning (37 tests)
+│   ├── test_models.py                  # Test regime classifier, regression models, predictions (39 tests)
+│   └── test_analysis.py                # Test analysis functions, dashboard, report (16 tests)
 │
 ├── outputs/
 │   ├── models/                         # Saved model files (pickle)
-│   │   ├── regime_high_model.pkl
-│   │   ├── regime_medium_model.pkl
-│   │   └── regime_low_model.pkl
+│   │   ├── regime_high_<year>_model.pkl     # One per year (2020–2026)
+│   │   ├── regime_medium_<year>_model.pkl
+│   │   ├── regime_low_<year>_model.pkl
+│   │   └── regime_metadata.json             # Nested by year + flat compat keys
 │   ├── plots/                          # Generated visualizations
-│   │   ├── historical_afrr_prices.png  # aFRR time series coloured by regime
-│   │   ├── css_vs_affr_prices.png      # CSS vs aFRR scatter (coloured by regime)
-│   │   └── forecast_curves.png         # Gas price x-axis, DA scenario lines, 3 regime panels
+│   │   ├── historical_afrr_prices.png       # aFRR time series coloured by regime
+│   │   ├── css_vs_affr_prices.png           # CSS vs aFRR scatter (coloured by regime)
+│   │   ├── regime_distribution.png          # Stacked bar of regime share per year
+│   │   ├── forecast_curves_jan_w1.png       # Jan 2026 weekly forecast (W1–W5)
+│   │   ├── forecast_curves_jan_w2.png
+│   │   ├── forecast_curves_jan_w3.png
+│   │   ├── forecast_curves_jan_w4.png
+│   │   ├── forecast_curves_jan_w5.png
+│   │   ├── forecast_curves_feb_w1.png       # Feb 2026 weekly forecast (W1–W4)
+│   │   ├── forecast_curves_feb_w2.png
+│   │   ├── forecast_curves_feb_w3.png
+│   │   └── forecast_curves_feb_w4.png
 │   ├── reports/
 │   │   ├── market_regime_report.html   # Automated HTML report
 │   │   └── dashboard.html              # Interactive Plotly dashboard
 │   └── data/
-│       └── opportunity_cost_estimates.csv  # Final estimates
 │
 └── venv/                               # Virtual environment (not committed)
 ```
@@ -99,7 +99,8 @@ global-tech-challenge/
 
 ### Clean Spark Spread (CSS)
 ```
-CSS = DA_Price + Gas_Price + Carbon_Tax - Efficiency_Loss
+carbon_cost = eu_ets_price * CARBON_INTENSITY / EFFICIENCY   # (0.202 / 0.50)
+CSS = DA_Price - (Gas_Price / EFFICIENCY) - carbon_cost
 ```
 - Represents the **opportunity cost** for gas peaker plants
 - Higher CSS = higher profitability of gas generation
@@ -113,26 +114,30 @@ CSS = DA_Price + Gas_Price + Carbon_Tax - Efficiency_Loss
 
 ### Market Regimes (3 classifications)
 
-| Regime | Gas Generation | Reserve Supply | aFRR Price Sensitivity |
-|--------|----------------|-----------------|----------------------|
-| **High** | Many plants online (>75th %ile) | Abundant | Low CSS sensitivity |
-| **Medium** | Moderate generation (25-75th %ile) | Balanced | Moderate sensitivity |
-| **Low** | Few plants online (<25th %ile) | Scarce | High CSS sensitivity |
+Regimes are assigned using **fixed MW thresholds** derived from K-Means centroids
+(default) or capacity-based thirds. Boundaries are the midpoints between adjacent centroids.
+
+| Regime | K-Means Centroid | Boundary (K-Means) | Reserve Supply | aFRR Price Sensitivity |
+|--------|------------------|--------------------|----------------|------------------------|
+| **Low** | ~3,776 MW | < 5,858 MW | Scarce | High CSS sensitivity |
+| **Medium** | ~7,941 MW | 5,858 – 10,546 MW | Balanced | Moderate sensitivity |
+| **High** | ~13,150 MW | ≥ 10,546 MW | Abundant | Low CSS sensitivity |
 
 **Rationale:** Fewer plants online = fewer reserve providers = higher prices with steeper CSS correlation.
+
+Toggle classification method in `config.py`: `REGIME_CLASSIFICATION_METHOD = "kmeans"` or `"capacity"`.
 
 ---
 
 ## Technical Requirements
 
 ### Python Stack
-- **Python:** 3.11+
+- **Python:** 3.10 (venv at `venv/`)
 - **Data:** pandas, NumPy
-- **Modeling:** scikit-learn, statsmodels
+- **Modeling:** statsmodels (OLS)
 - **Visualization:** Matplotlib, Seaborn, Plotly
 - **Notebooks:** Jupyter
 - **Testing:** pytest, pytest-cov
-- **IDE:** VS Code (Remote-WSL extension)
 
 ### Installation
 ```bash
@@ -148,152 +153,49 @@ pip install -r requirements.txt
 
 ## Development Workflow
 
-### Phase 1: Data Pipeline
+### Phase 1: Data Pipeline ✅
 ```bash
 python src/data_pipeline/main.py
 ```
 **Outputs:**
-- `data/processed/combined_dataset.csv` - Features + labels
-- `data/processed/market_regimes.csv` - Regime classifications
+- `data/processed/combined_dataset.csv` — all features merged
 - Summary statistics in logs
 
-### Phase 2: Model Development
+### Phase 2: Model Development ✅
 ```bash
 python src/models/regime_classifier.py
 python src/models/regression_models.py
-python src/models/model_validation.py
 ```
 **Outputs:**
-- `outputs/models/*.pkl` - Trained models (3 regime models)
-- `outputs/models/regime_metadata.json` - Coefficients, R², DW stats per regime
-- Model coefficients and R² values
+- `data/processed/market_regimes.csv` — PTU regime labels
+- `outputs/models/regime_{regime}_{year}_model.pkl` — 21 pkl files (7 years × 3 regimes)
+- `outputs/models/regime_metadata.json` — per-year nested stats + flat compat keys from most recent complete year
 
-### Phase 3: Analysis & Visualization
+### Phase 3: Analysis & Visualization ✅
 ```bash
 python src/analysis/visualization.py
 python src/analysis/dashboard.py
 python src/analysis/report_generator.py
 ```
 **Outputs:**
-- `outputs/plots/historical_afrr_prices.png` - aFRR time series coloured by regime
-- `outputs/plots/css_vs_affr_prices.png` - CSS vs aFRR scatter (coloured by regime)
-- `outputs/plots/forecast_curves.png` - Gas price x-axis, DA scenario lines, 3 regime panels
-- `outputs/reports/dashboard.html` - Interactive Plotly dashboard (3 charts: historical aFRR | CSS scatter | forecast curves)
-- `outputs/reports/market_regime_report.html` - HTML report (4 sections: findings → snapshot → reliability → scenario table)
+- `outputs/plots/historical_afrr_prices.png` — aFRR time series coloured by regime
+- `outputs/plots/css_vs_affr_prices.png` — CSS vs aFRR scatter (coloured by regime)
+- `outputs/plots/regime_distribution.png` — stacked bar of regime share per year
+- `outputs/plots/forecast_curves_{month}_w{N}.png` — weekly forecast plots (Jan W1–W5, Feb W1–W4)
+- `outputs/reports/dashboard.html` — interactive Plotly dashboard (3 charts)
+- `outputs/reports/market_regime_report.html` — HTML report (4 sections: findings → snapshot → reliability → scenario table)
 
 ### Testing & Validation
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run all tests (92 total)
+venv/bin/pytest tests/ -v
 
 # Run with coverage
-pytest tests/ --cov=src/ --cov-report=html
+venv/bin/pytest tests/ --cov=src/ --cov-report=html
 
 # Run specific test file
-pytest tests/test_models.py -v
+venv/bin/pytest tests/test_models.py -v
 ```
-
----
-
-## Claude Code Usage
-
-When using Claude Code in this project:
-
-```bash
-# Start session in project directory
-cd ~/projects/global-tech-challenge
-claude
-```
-
-### Common Commands
-
-**Code Generation:**
-```
-/generate "Create a function to calculate CSS from DA price, gas price, and carbon tax"
-/generate "Write data validation for market regime classification"
-/generate "Build visualization for regime distributions"
-```
-
-**Code Review & Analysis:**
-```
-/ask "Review the regression model assumptions and suggest diagnostics"
-/review src/models/regression_models.py
-/ask "What's the correlation structure between our predictors?"
-```
-
-**Testing & Debugging:**
-```
-/generate "Create comprehensive unit tests for data_loader.py"
-/ask "Why might the Low regime model have high residuals in Q4?"
-/test  # Run pytest if tests exist
-```
-
-**Documentation:**
-```
-/ask "Generate docstrings for all functions in data_pipeline module"
-/generate "Create a detailed README for the analysis module"
-```
-
-**Project Questions:**
-```
-/ask "Explain the market regime classification logic"
-/ask "What assumptions does the linear regression model make?"
-/ask "How should we handle outliers in CCGT generation data?"
-```
-
----
-
-## Coding Standards
-
-### Python Style
-- Follow **PEP 8** (line length: 100 chars)
-- Use **type hints** for all function parameters and returns
-- Write **docstrings** for all modules, classes, and public functions
-- Use **meaningful variable names** (no single letters except `i` in loops)
-
-### Example Function Style
-```python
-def calculate_css(
-    da_price: float,
-    gas_price: float,
-    carbon_tax: float,
-    efficiency: float = 0.5
-) -> float:
-    """
-    Calculate Clean Spark Spread (CSS) for CCGT plant.
-    
-    Args:
-        da_price: Day-ahead market price (€/MWh)
-        gas_price: Gas forward price (€/MWh thermal)
-        carbon_tax: EU-ETS carbon allowance price (€/ton CO2)
-        efficiency: Plant efficiency factor (default 0.5 = 50%)
-    
-    Returns:
-        CSS value in €/MWh
-    
-    Raises:
-        ValueError: If inputs are negative
-    """
-    if any(x < 0 for x in [da_price, gas_price, carbon_tax]):
-        raise ValueError("Prices cannot be negative")
-    
-    carbon_cost = carbon_tax * 0.202 / efficiency  # ~0.2 ton CO2/MWh gas
-    css = da_price - (gas_price / efficiency) - carbon_cost
-    return css
-```
-
-### Git Commit Messages
-- **Format:** Imperative mood, max 72 chars
-- **Good:** `"Add regime classifier with percentile thresholds"`
-- **Bad:** `"Added classifier"` or `"WIP: trying to fix something"`
-- **Format:** 
-  ```
-  Add regime classification module
-  
-  - Classify PTUs into high/medium/low based on CCGT generation percentiles
-  - Add unit tests for boundary conditions
-  - Create visualization of regime distribution
-  ```
 
 ---
 
@@ -304,37 +206,52 @@ def calculate_css(
 aFRR_Price = β₀ + β₁·CSS + ε
 ```
 
-**Fitted separately for each regime** to capture interaction effects.
+**Fitted separately for each year × regime** (21 models total) to capture both
+regime-level and inter-year variation.
 
 **Rationale for single-predictor design:**
 - DA price is already embedded in CSS — including it separately would double-count
 - Market regimes already isolate CCGT generation effects → CCGT_Gen dropped as predictor
 
-### Actual Coefficients (2021 data, Jan–Nov)
-| Regime | β₁ (CSS slope) | R²    | Note |
-|--------|----------------|-------|------|
-| High   | +0.5864        | 0.177 | Positive slope as expected |
-| Medium | −0.2769        | 0.011 | Negative slope — 2021 data artifact |
-| Low    | −0.3140        | 0.094 | Negative slope — 2021 data artifact |
+### Model File Naming
+```
+outputs/models/regime_{regime}_{year}_model.pkl
+  e.g. regime_high_2022_model.pkl
+       regime_medium_2023_model.pkl
+       regime_low_2024_model.pkl
+```
 
-**Note on negative slopes:** Medium/low regimes show negative CSS sensitivity in 2021 data. This is a real finding from an 11-month training window with high PTU-level noise, not a bug. A longer multi-year window is expected to clarify the relationship.
+### Metadata JSON Structure
+```json
+{
+  "2022": {
+    "high":   { "beta_0": ..., "beta_1_css": ..., "rsquared": ..., "durbin_watson": ..., ... },
+    "medium": { ... },
+    "low":    { ... }
+  },
+  "2023": { ... },
+  "high":   { ... },   // flat compat keys = most recent complete year
+  "medium": { ... },
+  "low":    { ... }
+}
+```
 
 ### Validation Metrics
-- **R² > 0.50** target for each regime model (actual values lower due to short data window)
+- **R² > 0.50** target per model
 - **Residuals:** Normally distributed, homoscedastic
-- **Durbin-Watson:** 1.8–2.2 target (actual DW < 1 indicates positive autocorrelation — flagged in report)
+- **Durbin-Watson:** 1.8–2.2 target (DW < 1 = positive autocorrelation — flagged in report)
 
 ---
 
 ## Data Sources & Access
 
-| Dataset | Source | Format | Update Frequency |
-|---------|--------|--------|------------------|
-| DA Prices | ENTSO-E Transparency | CSV/API | Hourly |
-| aFRR Prices | ENTSO-E or TSO | CSV/API | Per PTU |
-| CCGT Generation | ENTSO-E Transparency | CSV/API | Per PTU |
-| EU-ETS Prices | ICE/BloombergNEF | CSV/web scrape | Daily |
-| Gas Prices | ICE/Refinitiv | CSV/API | Daily/Weekly |
+| Dataset | Source | Format | Notes |
+|---------|--------|--------|-------|
+| DA Prices | ENTSO-E API (`entsoe-py`) | hourly CSV | `export ENTSOE_API_TOKEN=...` |
+| aFRR Prices | Static CSV (2020–2026) | hourly CSV | `data/raw/affr_prices.csv` |
+| CCGT Generation | ENTSO-E API | hourly CSV | same token |
+| EU-ETS Prices | Ember Climate (manual) | daily CSV | `data/raw/eu_ets_prices.csv` |
+| Gas Prices | energy-charts.info (manual) | weekly CSV | `data/raw/gas_prices.csv` |
 
 See `data/references/data_sources.md` for detailed access instructions.
 
@@ -356,56 +273,60 @@ See `data/references/data_sources.md` for detailed access instructions.
    - Non-linear effects possible during extreme market conditions
 
 4. **Data quality:**
-   - Missing data → interpolation strategy documented in data_cleaner.py
-   - Outliers → removal criteria explained in feature_engineer.py
+   - Missing data → interpolation strategy documented in `data_cleaner.py`
+   - Outliers → removal criteria in `feature_engineer.py`
 
 ---
 
 ## Key Deliverables
 
-### 1. Market Regime Classifier
+### 1. Market Regime Classifier ✅
 - **Input:** CCGT generation time series
-- **Output:** Regime labels (High/Medium/Low) per PTU
+- **Output:** Regime labels (High/Medium/Low) per PTU using fixed MW thresholds
 - **File:** `src/models/regime_classifier.py`
+- **Reference data:** `data/references/regime_kmeans.json`, `regime_capacity.json`
 
-### 2. Regression Models (3 models)
-- **High regime model:** `outputs/models/regime_high_model.pkl`
-- **Medium regime model:** `outputs/models/regime_medium_model.pkl`
-- **Low regime model:** `outputs/models/regime_low_model.pkl`
-- **Format:** Sklearn-compatible pickle files
+### 2. Regression Models (21 models) ✅
+- **Format:** `outputs/models/regime_{regime}_{year}_model.pkl`
+- **Coverage:** 7 years × 3 regimes = up to 21 models
+- **Sidecar:** `outputs/models/regime_metadata.json` (nested by year + flat compat keys)
 
-### 3. Opportunity Cost Calculator
-- **Type:** Function or CLI tool
-- **Inputs:** `da_price`, `gas_price`, `eu_ets_price`, `regime`
-- **Output:** Estimated aFRR-up opportunity cost (€/MWh)
-- **Files:** `src/models/predictions.py` + CLI wrapper
-- **API:** `estimate_afrr_price(da_price, gas_price, eu_ets_price, regime)`
+### 3. Opportunity Cost Calculator ✅
+- **Type:** Python function + CLI tool
+- **Inputs:** `da_price`, `gas_price`, `eu_ets_price`, `regime`, `year` (default 2022)
+- **Output:** Estimated aFRR-up opportunity cost (€/MW)
+- **File:** `src/models/predictions.py`
+- **API:** `estimate_afrr_price(da_price, gas_price, eu_ets_price, regime, year=2022)`
+- **CLI:** `python src/models/predictions.py --da-price 80 --gas-price 35 --ets-price 60 --regime low --year 2022`
 
-### 4. Analysis Report & Dashboard
+### 4. Analysis Report & Dashboard ✅
 - **Report:** `outputs/reports/market_regime_report.html` — 4 sections: key findings, model snapshot, reliability flags, scenario table
 - **Dashboard:** `outputs/reports/dashboard.html` — interactive Plotly, 3 charts (historical aFRR by regime, CSS scatter, forecast curves)
 
-### 5. Visualizations (3 plots)
+### 5. Visualizations (12 plots) ✅
 - `historical_afrr_prices.png` — aFRR time series coloured by market regime
 - `css_vs_affr_prices.png` — CSS vs aFRR prices scatter plot (colored by regime)
-- `forecast_curves.png` — gas price on x-axis, DA scenario lines, separate panel per regime
+- `regime_distribution.png` — stacked bar of regime share per year
+- `forecast_curves_jan_w1.png` … `forecast_curves_jan_w5.png` — Jan 2026 weekly forecast (W1–W5)
+- `forecast_curves_feb_w1.png` … `forecast_curves_feb_w4.png` — Feb 2026 weekly forecast (W1–W4)
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests
+### Unit Tests (92 total, all passing)
 ```bash
-pytest tests/test_data_pipeline.py -v  # Data loading/cleaning
-pytest tests/test_models.py -v         # Model fitting & prediction
-pytest tests/test_analysis.py -v       # Analysis functions
+venv/bin/pytest tests/test_data_pipeline.py -v   # 37 tests: data loading/cleaning
+venv/bin/pytest tests/test_models.py -v           # 39 tests: regime classifier, regression, predictions
+venv/bin/pytest tests/test_analysis.py -v         # 16 tests: visualization, report, dashboard
 ```
 
-### What to Test
-- **Data Pipeline:** Handles missing values, outliers, merges correctly
-- **Regime Classifier:** Correctly assigns percentile-based regimes
-- **Models:** Coefficients reasonable, predictions in expected ranges
-- **Calculations:** CSS formula, metrics (R², VIF, DW) correct
+### What is Tested
+- **Data Pipeline:** Missing values, outliers, merges, AFRR loader
+- **Regime Classifier:** `load_centroids`, `compute_thresholds`, `assign_regimes` boundary logic, method toggle
+- **Regression Models:** `fit_regime_model`, `save_model`, `build_year_regime_metadata`, per-year `run()` integration
+- **Predictions:** `estimate_afrr_price` with explicit/default year, CLI `--year` arg, error handling
+- **Analysis:** PNG plots, HTML report content, Plotly dashboard
 
 ### Coverage Target
 - Minimum **80% code coverage**
@@ -414,40 +335,23 @@ pytest tests/test_analysis.py -v       # Analysis functions
 
 ---
 
-## Next Steps (For Claude Code)
-
-When you first run `claude` in this project, ask:
-
-```
-/ask "Help me set up the complete data pipeline from raw CSV files to processed datasets"
-/generate "Create the data_loader.py module to read ENTSO-E CSV files"
-/generate "Build the regime_classifier.py with percentile-based logic"
-/ask "What diagnostic plots should I create to validate the regression models?"
-/generate "Create comprehensive test suite for the models module"
-```
-
----
-
 ## Useful Commands
 
 ```bash
-# Data processing
+# Full pipeline (all 3 phases)
 python src/data_pipeline/main.py
-
-# Model training
+python src/models/regime_classifier.py
 python src/models/regression_models.py
-
-# Generate visualizations
 python src/analysis/visualization.py
-
-# Run tests
-pytest tests/ -v --cov=src/
-
-# Jupyter exploration
-jupyter notebook notebooks/
-
-# Generate report
+python src/analysis/dashboard.py
 python src/analysis/report_generator.py
+
+# Predict opportunity cost (CLI)
+python src/models/predictions.py \
+    --da-price 80 --gas-price 35 --ets-price 60 --regime low --year 2022
+
+# Run all tests
+venv/bin/pytest tests/ -v --cov=src/
 ```
 
 ---
@@ -457,32 +361,38 @@ python src/analysis/report_generator.py
 Key settings in `src/utils/config.py`:
 
 ```python
-# Market regime thresholds (percentiles)
-REGIME_THRESHOLDS = {
-    'high': 0.75,      # Top 25% by CCGT generation
-    'medium': 0.25,    # Middle 50%
-    'low': 0.00        # Bottom 25%
-}
+BIDDING_ZONE = "DE_LU"
 
-# Time period for analysis (constrained by data availability)
-ANALYSIS_START = '2021-01-01'
-ANALYSIS_END = '2021-11-30'    # 11-month window; shorter than ideal
+# Analysis window (full available range)
+ANALYSIS_START = "2020-01-01"
+ANALYSIS_END   = "2026-03-09"
+
+# CCGT plant assumptions
+EFFICIENCY       = 0.50    # 50% thermal efficiency
+CARBON_INTENSITY = 0.202   # tCO₂ per MWh_thermal
+
+# Regime classification
+REGIME_CLASSIFICATION_METHOD = "kmeans"  # or "capacity"
+REGIME_KMEANS_JSON   = DATA_REFERENCES / "regime_kmeans.json"
+REGIME_CAPACITY_JSON = DATA_REFERENCES / "regime_capacity.json"
+
+# (Legacy percentile thresholds — kept for documentation only)
+REGIME_THRESHOLDS = {"high": 0.75, "medium": 0.25, "low": 0.00}
 
 # Model hyperparameters
-OLS_FIT_METHOD = 'pinv'        # Pseudo-inverse for robustness
-TEST_SIZE = 0.2
-RANDOM_STATE = 42
+OLS_FIT_METHOD = "pinv"   # Pseudo-inverse for numerical robustness
+MIN_OBSERVATIONS = 20     # Minimum rows per (year, regime) to fit a model
 
 # Data validation
-MAX_MISSING_RATE = 0.05        # Max 5% missing values per column
-OUTLIER_THRESHOLD = 3.0        # Z-score threshold
+MAX_MISSING_RATE   = 0.05   # Max 5% missing values per column
+OUTLIER_THRESHOLD  = 3.0    # Z-score threshold
 
-# Forecast scenario constants (used by predictions.py and dashboard)
-FORECAST_ETS_PRICE = 65.0           # Fixed EU-ETS price for scenarios (€/ton)
-FORECAST_GAS_MIN = 20.0             # Gas price range start (€/MWh thermal)
-FORECAST_GAS_MAX = 100.0            # Gas price range end (€/MWh thermal)
-FORECAST_GAS_STEPS = 100            # Number of gas price points in curve
-FORECAST_DA_SCENARIOS = [50.0, 80.0, 120.0, 160.0]  # DA price lines (€/MWh)
+# Forecast scenario constants (used by predictions.py, dashboard, and weekly forecast plots)
+FORECAST_ETS_PRICE      = 65.0                      # Fixed EU-ETS (€/tCO₂)
+FORECAST_GAS_MIN        = 20.0                       # €/MWh thermal
+FORECAST_GAS_MAX        = 100.0                      # €/MWh thermal
+FORECAST_GAS_STEPS      = 100
+FORECAST_DA_SCENARIOS   = [50.0, 80.0, 120.0, 160.0]  # €/MWh
 ```
 
 ---
@@ -499,9 +409,7 @@ FORECAST_DA_SCENARIOS = [50.0, 80.0, 120.0, 160.0]  # DA price lines (€/MWh)
 ## Contact & Updates
 
 - **Project Owner:** [Your Name]
-- **Created:** [Date]
-- **Last Updated:** [Date]
-- **Version:** 1.0.0
+- **Version:** 2.0.0 (Phase 2 overhaul — per-year models, centroid-based regime classification)
 
 ---
 

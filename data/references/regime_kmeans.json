@@ -1,0 +1,17 @@
+{
+  "low": {
+    "ccgt_mean_mw": 3775.7479441138025,
+    "ccgt_std_mw": 1147.7632326076077,
+    "n_observations": 26371
+  },
+  "medium": {
+    "ccgt_mean_mw": 7940.994158238926,
+    "ccgt_std_mw": 1313.4301132934095,
+    "n_observations": 19913
+  },
+  "high": {
+    "ccgt_mean_mw": 13150.202617324974,
+    "ccgt_std_mw": 1970.7724450705782,
+    "n_observations": 7956
+  }
+}
