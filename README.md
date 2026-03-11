@@ -50,7 +50,7 @@ global\_tech\_challenge/
 ├── outputs/
 │   ├── models/                     # Pickled OLS models + regime\_metadata.json
 │   ├── plots/                      # PNG visualisations and forecast curves
-│   └── reports/                    # market\_regime\_report.html, dashboard.html
+│   └── reports/                    # market\_regime\_report.html
 ├── Resources/                      # Vision doc, report template
 └── Claude Prompts/                 # LLM prompts used during analysis development
 ```
@@ -91,7 +91,7 @@ python src/data\_pipeline/main.py
 
 ### Market Regimes
 
-Each PTU (15-min interval) is classified into one of three regimes based on total CCGT generation using fixed MW thresholds derived from K-Means clustering:
+Each one hour interval is classified into one of three regimes based on total CCGT generation using fixed MW thresholds derived from K-Means clustering:
 
 |Regime|CCGT Generation|Reserve Supply|aFRR Price Sensitivity|
 |-|-|-|-|
@@ -112,10 +112,10 @@ aFRR\_Price = β₀ + β₁·CSS + ε
 
 where:
   CSS = DA\_Price − (Gas\_Price / η) − (ETS\_Price × 0.202 / η)
-  η   = 0.50  (CCGT thermal efficiency)
+  η   = 0.50  (Thermal efficiency)
 ```
 
-Up to 21 models are produced (7 years × 3 regimes; some combinations may fall below the minimum 20-observation threshold).
+Up to 21 models are produced (7 years × 3 regimes).
 
 ```bash
 python src/models/regime\_classifier.py
@@ -150,7 +150,6 @@ python src/analysis/report\_generator.py
 **Outputs — Reports (`outputs/reports/`):**
 
 * `market\_regime\_report.html` — narrative HTML report (5 sections: regime definitions → model fitting → model insights → forecasts → forecast insights)
-* `dashboard.html` — interactive Plotly dashboard (historical aFRR by regime, CSS scatter, forecast curves)
 
 ### Opportunity Cost Calculator (CLI)
 
@@ -198,7 +197,7 @@ venv/bin/pytest tests/ --cov=src/ --cov-report=html
 |-|-|
 |`tests/test\_data\_pipeline.py`|Data loading, cleaning, feature engineering (37 tests)|
 |`tests/test\_models.py`|Regime classifier, OLS models, predictions (39 tests)|
-|`tests/test\_analysis.py`|Visualizations, report, dashboard (16 tests)|
+|`tests/test\_analysis.py`|Visualizations, report (16 tests)|
 
 \---
 

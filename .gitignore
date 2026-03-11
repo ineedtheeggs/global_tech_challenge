@@ -1,52 +1,29 @@
+# Large raw data files
+data/raw/AFRR_Bid_Prices_2020-2026.csv
+
 # Virtual environment
 venv/
-.venv/
-env/
 
-# Python cache
+# Python bytecode
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
+*.pyc
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+htmlcov/
+.coverage
+
+# Model outputs
+outputs/models/*.pkl
+outputs/models/regime_metadata.json
 
 # Environment variables
 .env
-.env.*
 
-# Raw data (large CSVs, not committed — see data/references/ for sources)
-data/raw/*.csv
-data/processed/*.csv
+# LibreOffice lock files
+Resources/.~lock.*
 
-# Trained models
-outputs/models/*.pkl
-
-# Jupyter checkpoints
+# Jupyter
 .ipynb_checkpoints/
-notebooks/.ipynb_checkpoints/
-
-# IDE
-.vscode/
-.idea/
-*.code-workspace
-
-# OS
-.DS_Store
-Thumbs.db
-Zone.Identifier
-*.Zone.Identifier
-
-# Test / coverage artefacts
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-
-# Build / dist
-dist/
-build/
-*.egg-info/
-
-# Logs
-*.log
-logs/
